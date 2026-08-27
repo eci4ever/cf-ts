@@ -14,7 +14,10 @@
     "lint": "biome lint",
     "check": "biome check",
     "deploy": "npm run build && wrangler deploy",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply cf-ts-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply cf-ts-db --remote"
   },
   "dependencies": {
     "@faker-js/faker": "^10.3.0",
@@ -30,6 +33,7 @@
     "@tanstack/react-table": "latest",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "drizzle-orm": "^0.45.2",
     "lucide-react": "^0.577.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -49,6 +53,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.1",
     "babel-plugin-react-compiler": "^1.0.0",
+    "drizzle-kit": "^0.31.10",
     "typescript": "^6.0.2",
     "vite": "^8.0.0",
     "wrangler": "^4.127.0"

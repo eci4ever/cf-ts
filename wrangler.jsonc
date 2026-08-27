@@ -13,7 +13,21 @@
 	"observability": {
 		"enabled": true
 	},
-	"upload_source_maps": true
+	"upload_source_maps": true,
+	/**
+	 * D1 Databases
+	 * https://developers.cloudflare.com/d1/
+	 * "migrations_dir" points at drizzle-kit's output so `wrangler d1 migrations`
+	 * applies the SQL files drizzle-kit generates.
+	 */
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "cf-ts-db",
+			"database_id": "1b1c4b4b-770a-4d47-b27b-dfd33f04a058",
+			"migrations_dir": "drizzle"
+		}
+	]
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
