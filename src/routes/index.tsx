@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
 	BarChart3,
 	CalendarCheck,
@@ -57,10 +57,10 @@ function SiteHeader() {
 				</nav>
 				<div className="flex items-center gap-2">
 					<Button variant="ghost" asChild>
-						<a href="#">Sign in</a>
+						<Link to="/login">Sign in</Link>
 					</Button>
 					<Button asChild>
-						<a href="#">Get started</a>
+						<Link to="/signup">Get started</Link>
 					</Button>
 				</div>
 			</div>
@@ -82,7 +82,7 @@ function Hero() {
 			</p>
 			<div className="flex flex-wrap items-center justify-center gap-3">
 				<Button size="lg" asChild>
-					<a href="#">Start tracking free</a>
+					<Link to="/signup">Start tracking free</Link>
 				</Button>
 				<Button size="lg" variant="outline" asChild>
 					<a href="#features">Explore features</a>
@@ -251,7 +251,7 @@ function CtaBand() {
 					attendance tracking.
 				</p>
 				<Button size="lg" asChild>
-					<a href="#">Create your workspace</a>
+					<Link to="/signup">Create your workspace</Link>
 				</Button>
 			</div>
 		</section>
