@@ -161,8 +161,8 @@ function Features() {
 					Everything attendance, in one system
 				</h2>
 				<p className="max-w-xl text-muted-foreground">
-					From punch to payroll, handle the whole workflow without
-					spreadsheets or chasing timesheets.
+					From punch to payroll, handle the whole workflow without spreadsheets
+					or chasing timesheets.
 				</p>
 			</div>
 			<div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -205,10 +205,7 @@ const steps = [
 
 function HowItWorks() {
 	return (
-		<section
-			id="how-it-works"
-			className="border-y bg-muted/40 py-24"
-		>
+		<section id="how-it-works" className="border-y bg-muted/40 py-24">
 			<div className="mx-auto w-full max-w-6xl px-6">
 				<div className="mb-12 flex flex-col items-center gap-3 text-center">
 					<h2 className="text-3xl font-bold tracking-tight">

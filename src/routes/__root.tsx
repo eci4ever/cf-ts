@@ -6,9 +6,9 @@ import {
 	Scripts,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
+import { NotFound } from "../components/not-found";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 import appCss from "../styles.css?url";
-import { NotFound } from "../components/not-found";
 
 interface MyRouterContext {
 	queryClient: QueryClient;

@@ -10,13 +10,23 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as AppAttendanceRouteImport } from './routes/_app/attendance'
+import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
+import { Route as AppEmployeesRouteImport } from './routes/_app/employees'
+import { Route as AppLeaveRouteImport } from './routes/_app/leave'
+import { Route as AppReportsRouteImport } from './routes/_app/reports'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -29,6 +39,31 @@ const SignupRoute = SignupRouteImport.update({
   path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppAttendanceRoute = AppAttendanceRouteImport.update({
+  id: '/attendance',
+  path: '/attendance',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDashboardRoute = AppDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppEmployeesRoute = AppEmployeesRouteImport.update({
+  id: '/employees',
+  path: '/employees',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLeaveRoute = AppLeaveRouteImport.update({
+  id: '/leave',
+  path: '/leave',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportsRoute = AppReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AppRoute,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -39,31 +74,77 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/attendance': typeof AppAttendanceRoute
+  '/dashboard': typeof AppDashboardRoute
+  '/employees': typeof AppEmployeesRoute
+  '/leave': typeof AppLeaveRoute
+  '/reports': typeof AppReportsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/attendance': typeof AppAttendanceRoute
+  '/dashboard': typeof AppDashboardRoute
+  '/employees': typeof AppEmployeesRoute
+  '/leave': typeof AppLeaveRoute
+  '/reports': typeof AppReportsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/_app/attendance': typeof AppAttendanceRoute
+  '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/employees': typeof AppEmployeesRoute
+  '/_app/leave': typeof AppLeaveRoute
+  '/_app/reports': typeof AppReportsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/signup' | '/api/auth/$'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/signup'
+    | '/attendance'
+    | '/dashboard'
+    | '/employees'
+    | '/leave'
+    | '/reports'
+    | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/signup' | '/api/auth/$'
-  id: '__root__' | '/' | '/login' | '/signup' | '/api/auth/$'
+  to:
+    | '/'
+    | '/login'
+    | '/signup'
+    | '/attendance'
+    | '/dashboard'
+    | '/employees'
+    | '/leave'
+    | '/reports'
+    | '/api/auth/$'
+  id:
+    | '__root__'
+    | '/'
+    | '/_app'
+    | '/login'
+    | '/signup'
+    | '/_app/attendance'
+    | '/_app/dashboard'
+    | '/_app/employees'
+    | '/_app/leave'
+    | '/_app/reports'
+    | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   SignupRoute: typeof SignupRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -76,6 +157,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -92,6 +180,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/attendance': {
+      id: '/_app/attendance'
+      path: '/attendance'
+      fullPath: '/attendance'
+      preLoaderRoute: typeof AppAttendanceRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/dashboard': {
+      id: '/_app/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/employees': {
+      id: '/_app/employees'
+      path: '/employees'
+      fullPath: '/employees'
+      preLoaderRoute: typeof AppEmployeesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/leave': {
+      id: '/_app/leave'
+      path: '/leave'
+      fullPath: '/leave'
+      preLoaderRoute: typeof AppLeaveRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/reports': {
+      id: '/_app/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof AppReportsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -102,8 +225,27 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppRouteChildren {
+  AppAttendanceRoute: typeof AppAttendanceRoute
+  AppDashboardRoute: typeof AppDashboardRoute
+  AppEmployeesRoute: typeof AppEmployeesRoute
+  AppLeaveRoute: typeof AppLeaveRoute
+  AppReportsRoute: typeof AppReportsRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppAttendanceRoute: AppAttendanceRoute,
+  AppDashboardRoute: AppDashboardRoute,
+  AppEmployeesRoute: AppEmployeesRoute,
+  AppLeaveRoute: AppLeaveRoute,
+  AppReportsRoute: AppReportsRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   SignupRoute: SignupRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

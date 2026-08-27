@@ -4,10 +4,8 @@ import {
 	redirect,
 	useRouter,
 } from "@tanstack/react-router";
-import { useState } from "react";
 import { CalendarCheck } from "lucide-react";
-import { authClient } from "#/lib/auth-client";
-import { getSession } from "#/lib/auth.functions";
+import { useState } from "react";
 import { Button } from "#/components/ui/button";
 import {
 	Card,
@@ -18,12 +16,14 @@ import {
 } from "#/components/ui/card";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
+import { getSession } from "#/lib/auth.functions";
+import { authClient } from "#/lib/auth-client";
 
 export const Route = createFileRoute("/login")({
 	beforeLoad: async () => {
 		const session = await getSession();
 		if (session) {
-			throw redirect({ to: "/" });
+			throw redirect({ to: "/dashboard" });
 		}
 	},
 	component: LoginPage,
@@ -54,7 +54,7 @@ function LoginPage() {
 		}
 
 		await router.invalidate();
-		await router.navigate({ to: "/" });
+		await router.navigate({ to: "/dashboard" });
 	}
 
 	return (
@@ -96,9 +96,7 @@ function LoginPage() {
 								required
 							/>
 						</div>
-						{error ? (
-							<p className="text-sm text-destructive">{error}</p>
-						) : null}
+						{error ? <p className="text-sm text-destructive">{error}</p> : null}
 						<Button type="submit" disabled={pending}>
 							{pending ? "Signing in..." : "Sign in"}
 						</Button>
