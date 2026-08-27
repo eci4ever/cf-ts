@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { Button } from "#/components/ui/button";
 
 export function NotFound() {
 	return (
@@ -8,12 +9,9 @@ export function NotFound() {
 			<p className="text-balance text-muted-foreground">
 				Sorry, we couldn&apos;t find the page you&apos;re looking for.
 			</p>
-			<Link
-				to="/"
-				className="mt-4 inline-flex h-10 items-center justify-center rounded-md bg-primary px-6 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-			>
-				Back to home
-			</Link>
+			<Button asChild className="mt-4">
+				<Link to="/">Back to home</Link>
+			</Button>
 		</main>
 	);
 }
