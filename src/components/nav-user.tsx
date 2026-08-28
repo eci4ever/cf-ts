@@ -1,5 +1,10 @@
-import { useNavigate } from "@tanstack/react-router";
-import { ChevronsUpDown, LogOut, VenetianMask } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import {
+	ChevronsUpDown,
+	CircleUserRound,
+	LogOut,
+	VenetianMask,
+} from "lucide-react";
 import { Avatar, AvatarFallback } from "#/components/ui/avatar";
 import {
 	DropdownMenu,
@@ -80,6 +85,12 @@ export function NavUser() {
 							</div>
 						</DropdownMenuLabel>
 						<DropdownMenuSeparator />
+						<DropdownMenuItem asChild>
+							<Link to="/account">
+								<CircleUserRound />
+								Account
+							</Link>
+						</DropdownMenuItem>
 						{isImpersonating ? (
 							<DropdownMenuItem onClick={handleStopImpersonating}>
 								<VenetianMask />

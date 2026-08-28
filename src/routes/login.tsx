@@ -33,6 +33,9 @@ function LoginPage() {
 	const router = useRouter();
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
+	const [twoFactorRequired, setTwoFactorRequired] = useState(false);
+	const [useBackupCode, setUseBackupCode] = useState(false);
+	const [code, setCode] = useState("");
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 
@@ -41,7 +44,7 @@ function LoginPage() {
 		setError(null);
 		setPending(true);
 
-		const { error: signInError } = await authClient.signIn.email({
+		const { data, error: signInError } = await authClient.signIn.email({
 			email,
 			password,
 		});
@@ -53,8 +56,82 @@ function LoginPage() {
 			return;
 		}
 
+		if ((data as { twoFactorRedirect?: boolean } | null)?.twoFactorRedirect) {
+			setTwoFactorRequired(true);
+			return;
+		}
+
 		await router.invalidate();
 		await router.navigate({ to: "/dashboard" });
+	}
+
+	async function handleVerify(event: React.FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		setError(null);
+		setPending(true);
+
+		const { error: verifyError } = useBackupCode
+			? await authClient.twoFactor.verifyBackupCode({ code })
+			: await authClient.twoFactor.verifyTotp({ code });
+
+		setPending(false);
+
+		if (verifyError) {
+			setError(verifyError.message ?? "Invalid code");
+			return;
+		}
+
+		await router.invalidate();
+		await router.navigate({ to: "/dashboard" });
+	}
+
+	if (twoFactorRequired) {
+		return (
+			<main className="flex min-h-svh items-center justify-center bg-background p-6">
+				<Card className="w-full max-w-sm">
+					<CardHeader className="text-center">
+						<CardTitle className="text-xl">Two-factor authentication</CardTitle>
+						<CardDescription>
+							Enter the 6-digit code from your authenticator app
+						</CardDescription>
+					</CardHeader>
+					<CardContent>
+						<form onSubmit={handleVerify} className="flex flex-col gap-4">
+							<div className="flex flex-col gap-2">
+								<Label htmlFor="two-factor-code">
+									{useBackupCode ? "Backup code" : "6-digit code"}
+								</Label>
+								<Input
+									id="two-factor-code"
+									value={code}
+									onChange={(event) => setCode(event.target.value)}
+									required
+								/>
+							</div>
+							{error ? (
+								<p className="text-sm text-destructive">{error}</p>
+							) : null}
+							<Button type="submit" disabled={pending}>
+								{pending ? "Verifying..." : "Verify"}
+							</Button>
+							<Button
+								type="button"
+								variant="ghost"
+								onClick={() => {
+									setUseBackupCode((previous) => !previous);
+									setCode("");
+									setError(null);
+								}}
+							>
+								{useBackupCode
+									? "Use authenticator app instead"
+									: "Use a backup code instead"}
+							</Button>
+						</form>
+					</CardContent>
+				</Card>
+			</main>
+		);
 	}
 
 	return (

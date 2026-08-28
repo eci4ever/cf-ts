@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { admin, organization } from "better-auth/plugins";
+import { admin, organization, twoFactor } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { asc, eq } from "drizzle-orm";
 import { getDb } from "#/db";
@@ -20,6 +20,22 @@ function createAuth() {
 		emailAndPassword: {
 			enabled: true,
 		},
+		emailVerification: {
+			sendOnSignUp: true,
+			autoSignInAfterVerification: true,
+			sendVerificationEmail: async ({ user, url }) => {
+				const brand = env.EMAIL_BRAND_NAME || "Attendance Management System";
+				await sendEmail({
+					to: user.email,
+					subject: `Verify your email address on ${brand}`,
+					html: `
+						<p>Hi ${user.name},</p>
+						<p>Please verify your email address to activate your ${brand} account.</p>
+						<p><a href="${url}">Verify email address</a></p>
+					`,
+				});
+			},
+		},
 		plugins: [
 			admin(),
 			organization({
@@ -37,6 +53,9 @@ function createAuth() {
 						`,
 					});
 				},
+			}),
+			twoFactor({
+				issuer: env.EMAIL_BRAND_NAME || "Attendance Management System",
 			}),
 			tanstackStartCookies(),
 		],

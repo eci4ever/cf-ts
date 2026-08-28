@@ -15,8 +15,23 @@ export const user = sqliteTable("user", {
 	banned: integer("banned", { mode: "boolean" }),
 	banReason: text("ban_reason"),
 	banExpires: integer("ban_expires", { mode: "timestamp" }),
+	twoFactorEnabled: integer("two_factor_enabled", { mode: "boolean" })
+		.notNull()
+		.default(false),
 	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});
+
+export const twoFactor = sqliteTable("two_factor", {
+	id: text("id").primaryKey(),
+	secret: text("secret").notNull(),
+	backupCodes: text("backup_codes").notNull(),
+	userId: text("user_id")
+		.notNull()
+		.references(() => user.id, { onDelete: "cascade" }),
+	verified: integer("verified", { mode: "boolean" }).default(true),
+	failedVerificationCount: integer("failed_verification_count").default(0),
+	lockedUntil: integer("locked_until", { mode: "timestamp" }),
 });
 
 export const session = sqliteTable("session", {

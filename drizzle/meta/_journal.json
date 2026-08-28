@@ -15,6 +15,13 @@
       "when": 1787844025882,
       "tag": "0001_magical_sunfire",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787887630028,
+      "tag": "0002_redundant_thunderbird",
+      "breakpoints": true
     }
   ]
 }
