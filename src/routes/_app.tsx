@@ -95,7 +95,7 @@ function ImpersonationBanner() {
 				onClick={async () => {
 					await authClient.admin.stopImpersonating();
 					await router.invalidate();
-					await router.navigate({ to: "/admin" });
+					await router.navigate({ to: "/admin/users" });
 				}}
 			>
 				Stop impersonating

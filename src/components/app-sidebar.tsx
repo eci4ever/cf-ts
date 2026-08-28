@@ -2,13 +2,14 @@ import { Link, useRouteContext, useRouterState } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
 import {
 	BarChart3,
+	Building2,
 	CalendarDays,
 	LayoutDashboard,
 	Settings,
-	ShieldCheck,
 	Timer,
 	UserCog,
 	Users,
+	UsersRound,
 	Wallet,
 } from "lucide-react";
 import { NavUser } from "#/components/nav-user";
@@ -67,7 +68,13 @@ const navGroups: NavGroup[] = [
 	{
 		label: "Platform Admin",
 		items: [
-			{ title: "Admin", to: "/admin", icon: ShieldCheck, adminOnly: true },
+			{ title: "Users", to: "/admin/users", icon: UsersRound, adminOnly: true },
+			{
+				title: "Organization",
+				to: "/admin/organizations",
+				icon: Building2,
+				adminOnly: true,
+			},
 		],
 	},
 ];

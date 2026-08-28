@@ -35,7 +35,7 @@ export function NavUser() {
 
 	async function handleStopImpersonating() {
 		await authClient.admin.stopImpersonating();
-		await navigate({ to: "/admin" });
+		await navigate({ to: "/admin/users" });
 	}
 
 	const isImpersonating = Boolean(data?.session.impersonatedBy);
