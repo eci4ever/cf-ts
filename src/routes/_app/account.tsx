@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { CheckCircle2, KeyRound, ShieldCheck, X, XCircle } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -100,8 +101,6 @@ function ProfileTab({
 	const [displayName, setDisplayName] = useState(name);
 	const [imageUrl, setImageUrl] = useState(image);
 	const [pending, setPending] = useState(false);
-	const [error, setError] = useState<string | null>(null);
-	const [success, setSuccess] = useState<string | null>(null);
 
 	useEffect(() => {
 		setDisplayName(name);
@@ -110,8 +109,6 @@ function ProfileTab({
 
 	async function handleSave(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setError(null);
-		setSuccess(null);
 		setPending(true);
 
 		const { error: updateError } = await authClient.updateUser({
@@ -122,24 +119,22 @@ function ProfileTab({
 		setPending(false);
 
 		if (updateError) {
-			setError(updateError.message ?? "Failed to update profile");
+			toast.error(updateError.message ?? "Failed to update profile");
 			return;
 		}
-		setSuccess("Profile updated");
+		toast.success("Profile updated");
 	}
 
 	async function handleVerifyEmail() {
-		setError(null);
-		setSuccess(null);
 		const { error: verifyError } = await authClient.sendVerificationEmail({
 			email,
 			callbackURL: "/account",
 		});
 		if (verifyError) {
-			setError(verifyError.message ?? "Failed to send verification email");
+			toast.error(verifyError.message ?? "Failed to send verification email");
 			return;
 		}
-		setSuccess("Verification email sent");
+		toast.success("Verification email sent");
 	}
 
 	return (
@@ -170,10 +165,6 @@ function ProfileTab({
 								onChange={(event) => setImageUrl(event.target.value)}
 							/>
 						</div>
-						{error ? <p className="text-sm text-destructive">{error}</p> : null}
-						{success ? (
-							<p className="text-sm text-muted-foreground">{success}</p>
-						) : null}
 						<Button type="submit" disabled={pending} className="w-fit">
 							{pending ? "Saving..." : "Save changes"}
 						</Button>
@@ -238,16 +229,12 @@ function ChangePasswordCard() {
 	const [confirmPassword, setConfirmPassword] = useState("");
 	const [revokeOthers, setRevokeOthers] = useState(false);
 	const [pending, setPending] = useState(false);
-	const [error, setError] = useState<string | null>(null);
-	const [success, setSuccess] = useState<string | null>(null);
 
 	async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setError(null);
-		setSuccess(null);
 
 		if (newPassword !== confirmPassword) {
-			setError("New passwords do not match");
+			toast.error("New passwords do not match");
 			return;
 		}
 
@@ -260,13 +247,13 @@ function ChangePasswordCard() {
 		setPending(false);
 
 		if (changeError) {
-			setError(changeError.message ?? "Failed to change password");
+			toast.error(changeError.message ?? "Failed to change password");
 			return;
 		}
 		setCurrentPassword("");
 		setNewPassword("");
 		setConfirmPassword("");
-		setSuccess("Password changed");
+		toast.success("Password changed");
 	}
 
 	return (
@@ -323,10 +310,6 @@ function ChangePasswordCard() {
 							Sign out of all other sessions
 						</Label>
 					</div>
-					{error ? <p className="text-sm text-destructive">{error}</p> : null}
-					{success ? (
-						<p className="text-sm text-muted-foreground">{success}</p>
-					) : null}
 					<Button type="submit" disabled={pending} className="w-fit">
 						{pending ? "Updating..." : "Update password"}
 					</Button>
@@ -355,19 +338,16 @@ function TwoFactorCard({
 	const [code, setCode] = useState("");
 	const [newCodes, setNewCodes] = useState<string[] | null>(null);
 	const [pending, setPending] = useState(false);
-	const [error, setError] = useState<string | null>(null);
 
 	function reset() {
 		setSetup(null);
 		setNewCodes(null);
 		setPassword("");
 		setCode("");
-		setError(null);
 	}
 
 	async function handleEnable(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setError(null);
 		setPending(true);
 
 		const { data, error: enableError } = await authClient.twoFactor.enable({
@@ -375,7 +355,7 @@ function TwoFactorCard({
 		});
 
 		if (enableError || !data) {
-			setError(enableError?.message ?? "Failed to enable 2FA");
+			toast.error(enableError?.message ?? "Failed to enable 2FA");
 			setPending(false);
 			return;
 		}
@@ -400,7 +380,6 @@ function TwoFactorCard({
 
 	async function handleVerify(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setError(null);
 		setPending(true);
 
 		const { error: verifyError } = await authClient.twoFactor.verifyTotp({
@@ -410,7 +389,7 @@ function TwoFactorCard({
 		setPending(false);
 
 		if (verifyError) {
-			setError(verifyError.message ?? "Invalid code");
+			toast.error(verifyError.message ?? "Invalid code");
 			return;
 		}
 		reset();
@@ -421,14 +400,13 @@ function TwoFactorCard({
 		event: React.FormEvent<HTMLFormElement>,
 	) {
 		event.preventDefault();
-		setError(null);
 		setPending(true);
 		const { data, error: genError } =
 			await authClient.twoFactor.generateBackupCodes({ password });
 		setPending(false);
 
 		if (genError || !data) {
-			setError(genError?.message ?? "Failed to generate backup codes");
+			toast.error(genError?.message ?? "Failed to generate backup codes");
 			return;
 		}
 		setNewCodes(
@@ -440,7 +418,6 @@ function TwoFactorCard({
 
 	async function handleDisable(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setError(null);
 		setPending(true);
 		const { error: disableError } = await authClient.twoFactor.disable({
 			password,
@@ -448,7 +425,7 @@ function TwoFactorCard({
 		setPending(false);
 
 		if (disableError) {
-			setError(disableError.message ?? "Failed to disable 2FA");
+			toast.error(disableError.message ?? "Failed to disable 2FA");
 			return;
 		}
 		reset();
@@ -496,7 +473,6 @@ function TwoFactorCard({
 									setRegenOpen(open);
 									if (!open) {
 										setPassword("");
-										setError(null);
 									}
 								}}
 							>
@@ -525,9 +501,6 @@ function TwoFactorCard({
 												required
 											/>
 										</div>
-										{error ? (
-											<p className="text-sm text-destructive">{error}</p>
-										) : null}
 										<DialogFooter>
 											<Button type="submit" disabled={pending}>
 												{pending ? "Generating..." : "Generate"}
@@ -542,7 +515,6 @@ function TwoFactorCard({
 									setDisableOpen(open);
 									if (!open) {
 										setPassword("");
-										setError(null);
 									}
 								}}
 							>
@@ -571,9 +543,6 @@ function TwoFactorCard({
 												required
 											/>
 										</div>
-										{error ? (
-											<p className="text-sm text-destructive">{error}</p>
-										) : null}
 										<DialogFooter>
 											<Button
 												type="submit"
@@ -637,7 +606,6 @@ function TwoFactorCard({
 								required
 							/>
 						</div>
-						{error ? <p className="text-sm text-destructive">{error}</p> : null}
 						<Button type="submit" disabled={pending} className="w-fit">
 							{pending ? "Verifying..." : "Verify and enable"}
 						</Button>
@@ -671,7 +639,6 @@ function TwoFactorCard({
 							required
 						/>
 					</div>
-					{error ? <p className="text-sm text-destructive">{error}</p> : null}
 					<Button type="submit" disabled={pending} className="w-fit">
 						{pending ? "Setting up..." : "Enable 2FA"}
 					</Button>
@@ -684,14 +651,12 @@ function TwoFactorCard({
 function SessionsTab({ currentToken }: { currentToken: string }) {
 	const [sessions, setSessions] = useState<SessionRow[]>([]);
 	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
 
 	const loadSessions = useCallback(async () => {
 		setLoading(true);
-		setError(null);
 		const { data, error: listError } = await authClient.listSessions();
 		if (listError) {
-			setError(listError.message ?? "Failed to load sessions");
+			toast.error(listError.message ?? "Failed to load sessions");
 		} else {
 			setSessions(data ?? []);
 		}
@@ -752,7 +717,6 @@ function SessionsTab({ currentToken }: { currentToken: string }) {
 						</AlertDialogContent>
 					</AlertDialog>
 				</div>
-				{error ? <p className="text-sm text-destructive">{error}</p> : null}
 				<Table>
 					<TableHeader>
 						<TableRow>

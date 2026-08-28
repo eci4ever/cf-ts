@@ -1,6 +1,7 @@
 import { useRouter } from "@tanstack/react-router";
 import { CalendarCheck, Check, ChevronsUpDown, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "#/components/ui/button";
 import {
 	Dialog,
@@ -39,7 +40,6 @@ export function OrgSwitcher() {
 	const [open, setOpen] = useState(false);
 	const [name, setName] = useState("");
 	const [pending, setPending] = useState(false);
-	const [error, setError] = useState<string | null>(null);
 
 	const activeOrg = activeOrganization ?? organizations?.[0];
 
@@ -55,7 +55,6 @@ export function OrgSwitcher() {
 
 	async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setError(null);
 		setPending(true);
 
 		const slug = `${name
@@ -69,7 +68,7 @@ export function OrgSwitcher() {
 		});
 
 		if (createError || !data) {
-			setError(createError?.message ?? "Something went wrong");
+			toast.error(createError?.message ?? "Something went wrong");
 			setPending(false);
 			return;
 		}
@@ -166,9 +165,6 @@ export function OrgSwitcher() {
 											required
 										/>
 									</div>
-									{error ? (
-										<p className="text-sm text-destructive">{error}</p>
-									) : null}
 									<DialogFooter>
 										<Button type="submit" disabled={pending}>
 											{pending ? "Creating..." : "Create"}

@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { CalendarCheck } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "#/components/ui/button";
 import {
 	Card,
@@ -36,12 +37,10 @@ function LoginPage() {
 	const [twoFactorRequired, setTwoFactorRequired] = useState(false);
 	const [useBackupCode, setUseBackupCode] = useState(false);
 	const [code, setCode] = useState("");
-	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 
 	async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setError(null);
 		setPending(true);
 
 		const { data, error: signInError } = await authClient.signIn.email({
@@ -52,7 +51,7 @@ function LoginPage() {
 		setPending(false);
 
 		if (signInError) {
-			setError(signInError.message ?? "Something went wrong");
+			toast.error(signInError.message ?? "Something went wrong");
 			return;
 		}
 
@@ -67,7 +66,6 @@ function LoginPage() {
 
 	async function handleVerify(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setError(null);
 		setPending(true);
 
 		const { error: verifyError } = useBackupCode
@@ -77,7 +75,7 @@ function LoginPage() {
 		setPending(false);
 
 		if (verifyError) {
-			setError(verifyError.message ?? "Invalid code");
+			toast.error(verifyError.message ?? "Invalid code");
 			return;
 		}
 
@@ -108,9 +106,6 @@ function LoginPage() {
 									required
 								/>
 							</div>
-							{error ? (
-								<p className="text-sm text-destructive">{error}</p>
-							) : null}
 							<Button type="submit" disabled={pending}>
 								{pending ? "Verifying..." : "Verify"}
 							</Button>
@@ -120,7 +115,6 @@ function LoginPage() {
 								onClick={() => {
 									setUseBackupCode((previous) => !previous);
 									setCode("");
-									setError(null);
 								}}
 							>
 								{useBackupCode
@@ -173,7 +167,6 @@ function LoginPage() {
 								required
 							/>
 						</div>
-						{error ? <p className="text-sm text-destructive">{error}</p> : null}
 						<Button type="submit" disabled={pending}>
 							{pending ? "Signing in..." : "Sign in"}
 						</Button>

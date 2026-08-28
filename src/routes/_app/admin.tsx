@@ -1,6 +1,7 @@
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { MoreHorizontal, ShieldOff, UserCog, VenetianMask } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
@@ -49,16 +50,14 @@ function AdminPage() {
 	const router = useRouter();
 	const [users, setUsers] = useState<UserRow[]>([]);
 	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
 
 	const loadUsers = useCallback(async () => {
 		setLoading(true);
-		setError(null);
 		const { data, error: listError } = await authClient.admin.listUsers({
 			query: { limit: 100, sortBy: "createdAt" },
 		});
 		if (listError) {
-			setError(listError.message ?? "Failed to load users");
+			toast.error(listError.message ?? "Failed to load users");
 		} else {
 			setUsers((data?.users ?? []) as UserRow[]);
 		}
@@ -87,7 +86,7 @@ function AdminPage() {
 	async function handleImpersonate(userId: string) {
 		const { error } = await authClient.admin.impersonateUser({ userId });
 		if (error) {
-			setError(error.message ?? "Failed to impersonate user");
+			toast.error(error.message ?? "Failed to impersonate user");
 			return;
 		}
 		await router.invalidate();
@@ -100,7 +99,6 @@ function AdminPage() {
 				<CardTitle>User management</CardTitle>
 			</CardHeader>
 			<CardContent>
-				{error ? <p className="text-sm text-destructive">{error}</p> : null}
 				<Table>
 					<TableHeader>
 						<TableRow>

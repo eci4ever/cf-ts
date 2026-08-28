@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { Send, UserCog, UserMinus, UserPlus, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
@@ -81,16 +82,13 @@ function TeamPage() {
 	const [members, setMembers] = useState<MemberRow[]>([]);
 	const [invitations, setInvitations] = useState<InvitationRow[]>([]);
 	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
 
 	const [inviteEmail, setInviteEmail] = useState("");
 	const [inviteRole, setInviteRole] = useState<"member" | "admin">("member");
 	const [invitePending, setInvitePending] = useState(false);
-	const [inviteError, setInviteError] = useState<string | null>(null);
 
 	const loadAll = useCallback(async () => {
 		setLoading(true);
-		setError(null);
 		const [membersResult, invitationsResult] = await Promise.all([
 			listOrgMembers(),
 			listOrgInvitations(),
@@ -106,7 +104,6 @@ function TeamPage() {
 
 	async function handleInvite(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setInviteError(null);
 		setInvitePending(true);
 
 		const { error: inviteError } = await authClient.organization.inviteMember({
@@ -117,11 +114,12 @@ function TeamPage() {
 		setInvitePending(false);
 
 		if (inviteError) {
-			setInviteError(inviteError.message ?? "Failed to send invitation");
+			toast.error(inviteError.message ?? "Failed to send invitation");
 			return;
 		}
 
 		setInviteEmail("");
+		toast.success(`Invitation sent to ${inviteEmail}`);
 		await loadAll();
 	}
 
@@ -189,9 +187,6 @@ function TeamPage() {
 							{invitePending ? "Sending..." : "Send invite"}
 						</Button>
 					</form>
-					{inviteError ? (
-						<p className="mt-3 text-sm text-destructive">{inviteError}</p>
-					) : null}
 				</CardContent>
 			</Card>
 
@@ -200,7 +195,6 @@ function TeamPage() {
 					<CardTitle>Members</CardTitle>
 				</CardHeader>
 				<CardContent>
-					{error ? <p className="text-sm text-destructive">{error}</p> : null}
 					<Table>
 						<TableHeader>
 							<TableRow>

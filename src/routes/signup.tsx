@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { CalendarCheck } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "#/components/ui/button";
 import {
 	Card,
@@ -34,12 +35,10 @@ function SignupPage() {
 	const [name, setName] = useState("");
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
-	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 
 	async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setError(null);
 		setPending(true);
 
 		const { error: signUpError } = await authClient.signUp.email({
@@ -51,7 +50,7 @@ function SignupPage() {
 		setPending(false);
 
 		if (signUpError) {
-			setError(signUpError.message ?? "Something went wrong");
+			toast.error(signUpError.message ?? "Something went wrong");
 			return;
 		}
 
@@ -109,7 +108,6 @@ function SignupPage() {
 								required
 							/>
 						</div>
-						{error ? <p className="text-sm text-destructive">{error}</p> : null}
 						<Button type="submit" disabled={pending}>
 							{pending ? "Creating account..." : "Create account"}
 						</Button>

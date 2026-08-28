@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { Building2, CalendarCheck, Mail } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
@@ -46,10 +47,8 @@ function OnboardingPage() {
 	const router = useRouter();
 	const [name, setName] = useState("");
 	const [createPending, setCreatePending] = useState(false);
-	const [createError, setCreateError] = useState<string | null>(null);
 	const [invitations, setInvitations] = useState<InvitationRow[]>([]);
 	const [acceptingId, setAcceptingId] = useState<string | null>(null);
-	const [inviteError, setInviteError] = useState<string | null>(null);
 
 	const loadInvitations = useCallback(async () => {
 		const rows = await listMyInvitations();
@@ -62,7 +61,6 @@ function OnboardingPage() {
 
 	async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setCreateError(null);
 		setCreatePending(true);
 
 		const slug = `${name
@@ -76,7 +74,7 @@ function OnboardingPage() {
 		});
 
 		if (error || !data) {
-			setCreateError(error?.message ?? "Something went wrong");
+			toast.error(error?.message ?? "Something went wrong");
 			setCreatePending(false);
 			return;
 		}
@@ -88,7 +86,6 @@ function OnboardingPage() {
 	}
 
 	async function handleAccept(invitation: InvitationRow) {
-		setInviteError(null);
 		setAcceptingId(invitation.id);
 
 		const { error } = await authClient.organization.acceptInvitation({
@@ -96,7 +93,7 @@ function OnboardingPage() {
 		});
 
 		if (error) {
-			setInviteError(error.message ?? "Failed to accept invitation");
+			toast.error(error.message ?? "Failed to accept invitation");
 			setAcceptingId(null);
 			return;
 		}
@@ -110,13 +107,12 @@ function OnboardingPage() {
 	}
 
 	async function handleDecline(invitation: InvitationRow) {
-		setInviteError(null);
 		setAcceptingId(invitation.id);
 		const { error } = await authClient.organization.rejectInvitation({
 			invitationId: invitation.id,
 		});
 		if (error) {
-			setInviteError(error.message ?? "Failed to decline invitation");
+			toast.error(error.message ?? "Failed to decline invitation");
 		}
 		setAcceptingId(null);
 		await loadInvitations();
@@ -157,9 +153,6 @@ function OnboardingPage() {
 							</CardDescription>
 						</CardHeader>
 						<CardContent className="flex flex-col gap-3">
-							{inviteError ? (
-								<p className="text-sm text-destructive">{inviteError}</p>
-							) : null}
 							{invitations.map((invitation) => (
 								<div
 									key={invitation.id}
@@ -218,9 +211,6 @@ function OnboardingPage() {
 									required
 								/>
 							</div>
-							{createError ? (
-								<p className="text-sm text-destructive">{createError}</p>
-							) : null}
 							<Button type="submit" disabled={createPending}>
 								{createPending ? "Creating..." : "Create company"}
 							</Button>
