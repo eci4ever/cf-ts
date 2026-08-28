@@ -32,6 +32,12 @@ import {
 	SelectValue,
 } from "#/components/ui/select";
 import { getSession } from "#/lib/auth.functions";
+import {
+	createLeaveType,
+	deleteLeaveType,
+	listLeaveTypes,
+	updateLeaveType,
+} from "#/lib/leave.functions";
 import { getMyOrgRole } from "#/lib/org.functions";
 import {
 	deleteCurrentOrg,
@@ -104,6 +110,7 @@ function SettingsPage() {
 				onSaved={loadSettings}
 			/>
 			<ScheduleCard schedule={settings.schedule} onSaved={loadSettings} />
+			<LeaveTypesCard />
 			{isOwner ? (
 				<>
 					<TransferOwnershipCard
@@ -541,6 +548,203 @@ function DangerZoneCard({
 						</AlertDialogFooter>
 					</AlertDialogContent>
 				</AlertDialog>
+			</CardContent>
+		</Card>
+	);
+}
+
+type LeaveTypeRow = {
+	id: string;
+	name: string;
+	quotaDays: number | null;
+};
+
+function LeaveTypesCard() {
+	const [types, setTypes] = useState<LeaveTypeRow[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [name, setName] = useState("");
+	const [quota, setQuota] = useState("");
+	const [editingId, setEditingId] = useState<string | null>(null);
+	const [editName, setEditName] = useState("");
+	const [editQuota, setEditQuota] = useState("");
+	const [pending, setPending] = useState(false);
+
+	const load = useCallback(async () => {
+		setLoading(true);
+		const rows = await listLeaveTypes();
+		setTypes(rows as LeaveTypeRow[]);
+		setLoading(false);
+	}, []);
+
+	useEffect(() => {
+		load();
+	}, [load]);
+
+	async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		setPending(true);
+		const result = await createLeaveType({
+			data: { name, quotaDays: quota ? Number(quota) : null },
+		});
+		setPending(false);
+		if (!result.ok) {
+			toast.error(result.reason);
+			return;
+		}
+		toast.success(`Leave type "${name}" created`);
+		setName("");
+		setQuota("");
+		await load();
+	}
+
+	async function handleUpdate(event: React.FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		if (!editingId) {
+			return;
+		}
+		setPending(true);
+		const result = await updateLeaveType({
+			data: {
+				leaveTypeId: editingId,
+				name: editName,
+				quotaDays: editQuota ? Number(editQuota) : null,
+			},
+		});
+		setPending(false);
+		if (!result.ok) {
+			toast.error(result.reason);
+			return;
+		}
+		toast.success("Leave type updated");
+		setEditingId(null);
+		await load();
+	}
+
+	async function handleDelete(leaveTypeId: string) {
+		const result = await deleteLeaveType({ data: { leaveTypeId } });
+		if (!result.ok) {
+			toast.error(result.reason);
+			return;
+		}
+		toast.success("Leave type deleted");
+		await load();
+	}
+
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle className="flex items-center gap-2">
+					<SettingsIcon />
+					Leave types
+				</CardTitle>
+				<CardDescription>
+					Quota is per calendar year and applies to all employees. Leave empty
+					for unlimited.
+				</CardDescription>
+			</CardHeader>
+			<CardContent className="flex flex-col gap-4">
+				{loading ? (
+					<p className="text-sm text-muted-foreground">Loading…</p>
+				) : (
+					<div className="flex flex-col gap-2">
+						{types.map((type) =>
+							editingId === type.id ? (
+								<form
+									key={type.id}
+									onSubmit={handleUpdate}
+									className="flex flex-wrap items-end gap-2"
+								>
+									<Input
+										value={editName}
+										onChange={(event) => setEditName(event.target.value)}
+										className="w-40"
+										required
+									/>
+									<Input
+										value={editQuota}
+										onChange={(event) => setEditQuota(event.target.value)}
+										placeholder="Days (empty = unlimited)"
+										className="w-56"
+									/>
+									<Button type="submit" size="sm" disabled={pending}>
+										Save
+									</Button>
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										onClick={() => setEditingId(null)}
+									>
+										Cancel
+									</Button>
+								</form>
+							) : (
+								<div
+									key={type.id}
+									className="flex items-center justify-between gap-2 rounded-lg border p-3"
+								>
+									<div>
+										<p className="text-sm font-medium">{type.name}</p>
+										<p className="text-xs text-muted-foreground">
+											{type.quotaDays === null
+												? "Unlimited"
+												: `${type.quotaDays} days / year`}
+										</p>
+									</div>
+									<div className="flex gap-1">
+										<Button
+											variant="ghost"
+											size="sm"
+											onClick={() => {
+												setEditingId(type.id);
+												setEditName(type.name);
+												setEditQuota(
+													type.quotaDays === null ? "" : String(type.quotaDays),
+												);
+											}}
+										>
+											Edit
+										</Button>
+										<Button
+											variant="ghost"
+											size="sm"
+											onClick={() => handleDelete(type.id)}
+										>
+											Delete
+										</Button>
+									</div>
+								</div>
+							),
+						)}
+					</div>
+				)}
+				<form
+					onSubmit={handleCreate}
+					className="flex flex-wrap items-end gap-2 border-t pt-4"
+				>
+					<div className="flex flex-col gap-2">
+						<Label htmlFor="leave-type-name">New leave type</Label>
+						<Input
+							id="leave-type-name"
+							placeholder="Emergency"
+							value={name}
+							onChange={(event) => setName(event.target.value)}
+							required
+						/>
+					</div>
+					<div className="flex flex-col gap-2">
+						<Label htmlFor="leave-type-quota">Days / year</Label>
+						<Input
+							id="leave-type-quota"
+							placeholder="Empty = unlimited"
+							value={quota}
+							onChange={(event) => setQuota(event.target.value)}
+						/>
+					</div>
+					<Button type="submit" disabled={pending}>
+						{pending ? "Adding…" : "Add type"}
+					</Button>
+				</form>
 			</CardContent>
 		</Card>
 	);

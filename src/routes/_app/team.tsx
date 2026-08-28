@@ -42,6 +42,7 @@ import {
 	listOrgInvitations,
 	listOrgMembers,
 } from "#/lib/org.functions";
+import { setMemberRole } from "#/lib/org-settings.functions";
 
 export const Route = createFileRoute("/_app/team")({
 	staticData: { title: "Team" },
@@ -123,8 +124,16 @@ function TeamPage() {
 		await loadAll();
 	}
 
-	async function handleSetRole(memberId: string, role: "member" | "admin") {
-		await authClient.organization.updateMemberRole({ memberId, role });
+	async function handleSetRole(
+		memberId: string,
+		role: "member" | "supervisor" | "admin",
+	) {
+		const result = await setMemberRole({ data: { userId: memberId, role } });
+		if (!result.ok) {
+			toast.error(result.reason);
+			return;
+		}
+		toast.success(`Role updated to ${role}`);
 		await loadAll();
 	}
 
@@ -234,25 +243,36 @@ function TeamPage() {
 														</Button>
 													</DropdownMenuTrigger>
 													<DropdownMenuContent align="end">
-														{member.role === "admin" ? (
+														{member.role !== "member" ? (
 															<DropdownMenuItem
 																onClick={() =>
-																	handleSetRole(member.id, "member")
+																	handleSetRole(member.userId, "member")
 																}
 															>
 																<UserPlus />
 																Make member
 															</DropdownMenuItem>
-														) : (
+														) : null}
+														{member.role !== "supervisor" ? (
 															<DropdownMenuItem
 																onClick={() =>
-																	handleSetRole(member.id, "admin")
+																	handleSetRole(member.userId, "supervisor")
+																}
+															>
+																<UserCog />
+																Make supervisor
+															</DropdownMenuItem>
+														) : null}
+														{member.role !== "admin" ? (
+															<DropdownMenuItem
+																onClick={() =>
+																	handleSetRole(member.userId, "admin")
 																}
 															>
 																<UserCog />
 																Make admin
 															</DropdownMenuItem>
-														)}
+														) : null}
 														<DropdownMenuItem
 															onClick={() => handleRemove(member.id)}
 														>

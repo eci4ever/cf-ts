@@ -1,7 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "#/db";
-import { attendance, employee, member, organization } from "#/db/schema";
+import {
+	attendance,
+	attendanceIssue,
+	employee,
+	leaveRequest,
+	member,
+	organization,
+} from "#/db/schema";
+import { deriveIssues } from "./leave";
 import {
 	type ClockInStatus,
 	type ClockOutStatus,
@@ -14,7 +22,7 @@ import {
 	type Shift,
 	zonedWallTimeToUtc,
 } from "./schedule";
-import { getCurrentSession } from "./session";
+import { getCurrentSession, getOrgMemberContext } from "./session";
 
 type OrgRow = {
 	id: string;
@@ -232,8 +240,29 @@ export const listMyAttendance = createServerFn({ method: "GET" }).handler(
 export const adminListAttendance = createServerFn({ method: "GET" })
 	.validator((input: { date: string }) => input)
 	.handler(async ({ data }) => {
-		const { orgId } = await requireOrgAdminForAttendance();
-		const employees = await getDb()
+		const context = await getOrgMemberContext();
+		if (!context) {
+			throw new Error("Unauthorized");
+		}
+		const isAdmin = ["owner", "admin"].includes(context.role ?? "");
+		const isSupervisor = context.role === "supervisor";
+		if (!isAdmin && !isSupervisor) {
+			throw new Error("Forbidden");
+		}
+		let employeeIds: string[] | null = null;
+		if (!isAdmin && context.employee) {
+			const subordinates = await getDb()
+				.select({ id: employee.id })
+				.from(employee)
+				.where(
+					and(
+						eq(employee.organizationId, context.orgId),
+						eq(employee.supervisorId, context.employee.id),
+					),
+				);
+			employeeIds = subordinates.map((row) => row.id);
+		}
+		const employeeList = await getDb()
 			.select({
 				id: employee.id,
 				name: employee.name,
@@ -241,14 +270,18 @@ export const adminListAttendance = createServerFn({ method: "GET" })
 				shift: employee.shift,
 			})
 			.from(employee)
-			.where(eq(employee.organizationId, orgId))
+			.where(
+				employeeIds
+					? inArray(employee.id, employeeIds)
+					: eq(employee.organizationId, context.orgId),
+			)
 			.orderBy(employee.employeeNo);
 		const records = await getDb()
 			.select()
 			.from(attendance)
 			.where(
 				and(
-					eq(attendance.organizationId, orgId),
+					eq(attendance.organizationId, context.orgId),
 					eq(attendance.date, data.date),
 				),
 			);
@@ -256,11 +289,12 @@ export const adminListAttendance = createServerFn({ method: "GET" })
 			records.map((record) => [record.employeeId, record]),
 		);
 		return {
-			employees,
-			rows: employees.map((emp) => ({
+			employees: employeeList,
+			rows: employeeList.map((emp) => ({
 				employee: emp,
 				record: recordsByEmployee.get(emp.id) ?? null,
 			})),
+			scope: isAdmin ? ("all" as const) : ("subordinates" as const),
 		};
 	});
 
@@ -378,4 +412,350 @@ export const adminUpsertAttendance = createServerFn({ method: "POST" })
 			updatedAt: now,
 		});
 		return { ok: true as const, updated: false };
+	});
+// --- Attendance issues (late / short / missing_out / absent) ---
+
+async function requireIssueApprover(): Promise<
+	{ scope: "all" } | { scope: "subordinates"; employeeIds: string[] } | null
+> {
+	const context = await getOrgMemberContext();
+	if (!context) {
+		return null;
+	}
+	if (["owner", "admin"].includes(context.role ?? "")) {
+		return { scope: "all" };
+	}
+	if (context.role !== "supervisor" || !context.employee) {
+		return null;
+	}
+	const subordinates = await getDb()
+		.select({ id: employee.id })
+		.from(employee)
+		.where(
+			and(
+				eq(employee.organizationId, context.orgId),
+				eq(employee.supervisorId, context.employee.id),
+			),
+		);
+	return {
+		scope: "subordinates",
+		employeeIds: subordinates.map((row) => row.id),
+	};
+}
+
+async function syncIssues(options: {
+	orgId: string;
+	employeeIds: string[];
+	workDays: number[];
+	timezone: string;
+}): Promise<void> {
+	if (options.employeeIds.length === 0) {
+		return;
+	}
+	const now = new Date();
+	const today = formatZonedDate(now, options.timezone);
+	const monthStart = `${today.slice(0, 7)}-01`;
+	const records = await getDb()
+		.select({
+			employeeId: attendance.employeeId,
+			date: attendance.date,
+			clockInStatus: attendance.clockInStatus,
+			clockOutStatus: attendance.clockOutStatus,
+			clockOut: attendance.clockOut,
+		})
+		.from(attendance)
+		.where(
+			and(
+				inArray(attendance.employeeId, options.employeeIds),
+				eq(attendance.organizationId, options.orgId),
+			),
+		);
+	const relevant = records.filter(
+		(record) => record.date >= monthStart && record.date < today,
+	);
+	const approvedLeave = await getDb()
+		.select({
+			employeeId: leaveRequest.employeeId,
+			startDate: leaveRequest.startDate,
+			endDate: leaveRequest.endDate,
+		})
+		.from(leaveRequest)
+		.where(
+			and(
+				inArray(leaveRequest.employeeId, options.employeeIds),
+				eq(leaveRequest.status, "approved"),
+			),
+		);
+	const leaveCovered = new Set<string>();
+	for (const request of approvedLeave) {
+		let cursor = request.startDate;
+		while (cursor <= request.endDate) {
+			if (cursor >= monthStart) {
+				leaveCovered.add(`${request.employeeId}:${cursor}`);
+			}
+			const [year, month, day] = cursor.split("-").map(Number);
+			cursor = new Date(Date.UTC(year, month - 1, day + 1))
+				.toISOString()
+				.slice(0, 10);
+		}
+	}
+	const recordsByEmployee = new Map<string, typeof relevant>();
+	for (const record of relevant) {
+		const list = recordsByEmployee.get(record.employeeId) ?? [];
+		list.push(record);
+		recordsByEmployee.set(record.employeeId, list);
+	}
+	const derived: {
+		organizationId: string;
+		employeeId: string;
+		date: string;
+		type: string;
+	}[] = [];
+	for (const employeeId of options.employeeIds) {
+		const derivedForEmployee = deriveIssues({
+			records: recordsByEmployee.get(employeeId) ?? [],
+			leaveCoveredDates: new Set(
+				[...leaveCovered]
+					.filter((key) => key.startsWith(`${employeeId}:`))
+					.map((key) => key.split(":")[1]),
+			),
+			workDays: options.workDays,
+			rangeStart: monthStart,
+			rangeEnd: today,
+			today,
+		});
+		for (const issue of derivedForEmployee) {
+			derived.push({
+				organizationId: options.orgId,
+				employeeId,
+				date: issue.date,
+				type: issue.type,
+			});
+		}
+	}
+	const existing = await getDb()
+		.select({
+			id: attendanceIssue.id,
+			employeeId: attendanceIssue.employeeId,
+			date: attendanceIssue.date,
+			type: attendanceIssue.type,
+			status: attendanceIssue.status,
+		})
+		.from(attendanceIssue)
+		.where(
+			and(
+				eq(attendanceIssue.organizationId, options.orgId),
+				inArray(attendanceIssue.employeeId, options.employeeIds),
+			),
+		);
+	const derivedKeys = new Set(
+		derived.map((issue) => `${issue.employeeId}:${issue.date}:${issue.type}`),
+	);
+	const existingKeys = new Set(
+		existing.map((issue) => `${issue.employeeId}:${issue.date}:${issue.type}`),
+	);
+	const toInsert = derived.filter(
+		(issue) =>
+			!existingKeys.has(`${issue.employeeId}:${issue.date}:${issue.type}`),
+	);
+	if (toInsert.length > 0) {
+		await getDb()
+			.insert(attendanceIssue)
+			.values(
+				toInsert.map((issue) => ({
+					id: crypto.randomUUID(),
+					organizationId: issue.organizationId,
+					employeeId: issue.employeeId,
+					date: issue.date,
+					type: issue.type,
+					justification: null,
+					status: "open",
+					createdAt: now,
+					updatedAt: now,
+				})),
+			);
+	}
+	const stale = existing.filter(
+		(issue) =>
+			issue.status === "open" &&
+			!derivedKeys.has(`${issue.employeeId}:${issue.date}:${issue.type}`),
+	);
+	for (const issue of stale) {
+		await getDb()
+			.delete(attendanceIssue)
+			.where(eq(attendanceIssue.id, issue.id));
+	}
+}
+
+export const listMyIssues = createServerFn({ method: "GET" }).handler(
+	async () => {
+		const context = await getOrgMemberContext();
+		if (!context?.employee) {
+			return [];
+		}
+		await syncIssues({
+			orgId: context.orgId,
+			employeeIds: [context.employee.id],
+			workDays: context.org.workDays.split(",").map(Number),
+			timezone: context.org.timezone,
+		});
+		return getDb()
+			.select()
+			.from(attendanceIssue)
+			.where(eq(attendanceIssue.employeeId, context.employee.id))
+			.orderBy(desc(attendanceIssue.date));
+	},
+);
+
+export const submitJustification = createServerFn({ method: "POST" })
+	.validator((input: { issueId: string; justification: string }) => input)
+	.handler(async ({ data }) => {
+		const context = await getOrgMemberContext();
+		if (!context) {
+			throw new Error("Unauthorized");
+		}
+		const justification = data.justification.trim();
+		if (justification.length < 5) {
+			return {
+				ok: false as const,
+				reason: "Justification must be at least 5 characters",
+			};
+		}
+		const [issue] = await getDb()
+			.select({
+				id: attendanceIssue.id,
+				employeeId: attendanceIssue.employeeId,
+				status: attendanceIssue.status,
+			})
+			.from(attendanceIssue)
+			.where(eq(attendanceIssue.id, data.issueId))
+			.limit(1);
+		if (!issue || issue.employeeId === null) {
+			return { ok: false as const, reason: "Issue not found" };
+		}
+		const isAdmin = ["owner", "admin"].includes(context.role ?? "");
+		const isOwn = context.employee?.id === issue.employeeId;
+		if (!isOwn && !isAdmin) {
+			return { ok: false as const, reason: "Forbidden" };
+		}
+		if (!["open", "pending", "rejected"].includes(issue.status)) {
+			return {
+				ok: false as const,
+				reason: "This issue can no longer be justified",
+			};
+		}
+		await getDb()
+			.update(attendanceIssue)
+			.set({
+				justification,
+				status: "pending",
+				verifiedBy: null,
+				verifiedAt: null,
+				updatedAt: new Date(),
+			})
+			.where(eq(attendanceIssue.id, data.issueId));
+		return { ok: true as const };
+	});
+
+export const listIssuesForReview = createServerFn({ method: "GET" }).handler(
+	async () => {
+		const scope = await requireIssueApprover();
+		if (!scope) {
+			return { issues: [], scope: "none" as const };
+		}
+		const context = (await getOrgMemberContext())!;
+		const employeeIds =
+			scope.scope === "all"
+				? (
+						await getDb()
+							.select({ id: employee.id })
+							.from(employee)
+							.where(eq(employee.organizationId, context.orgId))
+					).map((row) => row.id)
+				: scope.employeeIds;
+		if (employeeIds.length === 0) {
+			return { issues: [], scope: scope.scope };
+		}
+		await syncIssues({
+			orgId: context.orgId,
+			employeeIds,
+			workDays: context.org.workDays.split(",").map(Number),
+			timezone: context.org.timezone,
+		});
+		const issues = await getDb()
+			.select({
+				id: attendanceIssue.id,
+				employeeId: attendanceIssue.employeeId,
+				employeeName: employee.name,
+				employeeNo: employee.employeeNo,
+				date: attendanceIssue.date,
+				type: attendanceIssue.type,
+				justification: attendanceIssue.justification,
+				status: attendanceIssue.status,
+			})
+			.from(attendanceIssue)
+			.innerJoin(employee, eq(attendanceIssue.employeeId, employee.id))
+			.where(inArray(attendanceIssue.employeeId, employeeIds))
+			.orderBy(desc(attendanceIssue.date));
+		return { issues, scope: scope.scope };
+	},
+);
+
+export const verifyIssue = createServerFn({ method: "POST" })
+	.validator(
+		(input: { issueId: string; decision: "verified" | "rejected" }) => input,
+	)
+	.handler(async ({ data }) => {
+		const context = await getOrgMemberContext();
+		if (!context) {
+			throw new Error("Unauthorized");
+		}
+		const scope = await requireIssueApprover();
+		if (!scope) {
+			return { ok: false as const, reason: "Forbidden" };
+		}
+		const [issue] = await getDb()
+			.select({
+				id: attendanceIssue.id,
+				employeeId: attendanceIssue.employeeId,
+				organizationId: attendanceIssue.organizationId,
+				status: attendanceIssue.status,
+			})
+			.from(attendanceIssue)
+			.where(eq(attendanceIssue.id, data.issueId))
+			.limit(1);
+		if (!issue || issue.organizationId !== context.orgId) {
+			return { ok: false as const, reason: "Issue not found" };
+		}
+		if (
+			scope.scope === "subordinates" &&
+			!scope.employeeIds.includes(issue.employeeId)
+		) {
+			return {
+				ok: false as const,
+				reason: "This issue belongs to another supervisor's team",
+			};
+		}
+		if (context.employee?.id === issue.employeeId) {
+			return {
+				ok: false as const,
+				reason: "You cannot verify your own attendance issue",
+			};
+		}
+		if (issue.status !== "pending") {
+			return {
+				ok: false as const,
+				reason: "This issue has no pending justification",
+			};
+		}
+		await getDb()
+			.update(attendanceIssue)
+			.set({
+				status: data.decision,
+				verifiedBy: context.session.user.id,
+				verifiedAt: new Date(),
+				updatedAt: new Date(),
+			})
+			.where(eq(attendanceIssue.id, data.issueId));
+		return { ok: true as const };
 	});

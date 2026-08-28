@@ -79,6 +79,8 @@ type EmployeeRow = {
 	shift: string;
 	joinedAt: Date | null;
 	isActive: boolean;
+	supervisorId: string | null;
+	supervisorName: string | null;
 	linkedEmail: string | null;
 	linkedName: string | null;
 };
@@ -90,6 +92,7 @@ type EmployeeForm = {
 	position: string;
 	shift: string;
 	joinedAt: string;
+	supervisorId: string;
 };
 
 function EmployeesPage() {
@@ -163,6 +166,14 @@ function EmployeesPage() {
 				cell: ({ row }) => (
 					<Badge variant="secondary">{row.original.shift}</Badge>
 				),
+			},
+			{
+				accessorKey: "supervisorName",
+				header: "Supervisor",
+				cell: ({ row }) =>
+					row.original.supervisorName ?? (
+						<span className="text-xs text-muted-foreground">—</span>
+					),
 			},
 			{
 				accessorKey: "linkedEmail",
@@ -256,6 +267,7 @@ function EmployeesPage() {
 			<EmployeeFormDialog
 				open={formOpen}
 				editing={editing}
+				employees={employees}
 				onOpenChange={(open) => {
 					if (!open) {
 						setFormOpen(false);
@@ -271,11 +283,13 @@ function EmployeesPage() {
 function EmployeeFormDialog({
 	open,
 	editing,
+	employees,
 	onOpenChange,
 	onSaved,
 }: {
 	open: boolean;
 	editing: EmployeeRow | null;
+	employees: EmployeeRow[];
 	onOpenChange: (open: boolean) => void;
 	onSaved: () => Promise<void>;
 }) {
@@ -285,12 +299,20 @@ function EmployeeFormDialog({
 		position: "",
 		shift: "normal",
 		joinedAt: "",
+		supervisorId: "",
 	});
 	const [linkable, setLinkable] = useState<
 		{ userId: string; name: string; email: string }[]
 	>([]);
 	const [linkTarget, setLinkTarget] = useState<string>("");
 	const [pending, setPending] = useState(false);
+
+	const supervisorOptions = employees.filter(
+		(candidate) =>
+			candidate.id !== editing?.id &&
+			candidate.id !== form.id &&
+			candidate.isActive,
+	);
 
 	useEffect(() => {
 		if (!open) {
@@ -307,6 +329,7 @@ function EmployeeFormDialog({
 						joinedAt: editing.joinedAt
 							? new Date(editing.joinedAt).toISOString().slice(0, 10)
 							: "",
+						supervisorId: editing.supervisorId ?? "",
 					}
 				: {
 						name: "",
@@ -314,6 +337,7 @@ function EmployeeFormDialog({
 						position: "",
 						shift: "normal",
 						joinedAt: "",
+						supervisorId: "",
 					},
 		);
 		setLinkTarget("");
@@ -336,6 +360,10 @@ function EmployeeFormDialog({
 						position: form.position,
 						shift: form.shift,
 						joinedAt: form.joinedAt || undefined,
+						supervisorId:
+							form.supervisorId && form.supervisorId !== "none"
+								? form.supervisorId
+								: null,
 					},
 				})
 			: await createEmployee({
@@ -443,6 +471,31 @@ function EmployeeFormDialog({
 								}
 							/>
 						</div>
+						{editing ? (
+							<div className="flex flex-col gap-2">
+								<Label htmlFor="employee-supervisor">Supervisor</Label>
+								<Select
+									value={form.supervisorId}
+									onValueChange={(value) =>
+										setForm({ ...form, supervisorId: value })
+									}
+								>
+									<SelectTrigger id="employee-supervisor" className="w-full">
+										<SelectValue placeholder="None" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectGroup>
+											<SelectItem value="none">— No supervisor —</SelectItem>
+											{supervisorOptions.map((candidate) => (
+												<SelectItem key={candidate.id} value={candidate.id}>
+													{candidate.name} ({candidate.employeeNo})
+												</SelectItem>
+											))}
+										</SelectGroup>
+									</SelectContent>
+								</Select>
+							</div>
+						) : null}
 						{editing ? (
 							<div className="flex flex-col gap-2">
 								<Label htmlFor="employee-link">Link member account</Label>

@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { and, asc, eq, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { getDb } from "#/db";
 import { employee, member, organization, user } from "#/db/schema";
 import { getCurrentSession } from "./session";
@@ -45,6 +46,7 @@ async function getSeatCap(orgId: string): Promise<number | null> {
 export const listEmployees = createServerFn({ method: "GET" }).handler(
 	async () => {
 		const { orgId } = await requireOrgAdmin();
+		const supervisor = alias(employee, "supervisor");
 		return getDb()
 			.select({
 				id: employee.id,
@@ -54,11 +56,14 @@ export const listEmployees = createServerFn({ method: "GET" }).handler(
 				shift: employee.shift,
 				joinedAt: employee.joinedAt,
 				isActive: employee.isActive,
+				supervisorId: employee.supervisorId,
+				supervisorName: supervisor.name,
 				linkedEmail: user.email,
 				linkedName: user.name,
 			})
 			.from(employee)
 			.leftJoin(user, eq(employee.userId, user.id))
+			.leftJoin(supervisor, eq(employee.supervisorId, supervisor.id))
 			.where(eq(employee.organizationId, orgId))
 			.orderBy(asc(employee.employeeNo));
 	},
@@ -152,6 +157,7 @@ export const updateEmployee = createServerFn({ method: "POST" })
 			position?: string;
 			shift?: string;
 			joinedAt?: string;
+			supervisorId?: string | null;
 		}) => input,
 	)
 	.handler(async ({ data }) => {
@@ -183,6 +189,47 @@ export const updateEmployee = createServerFn({ method: "POST" })
 		if (data.shift !== undefined && !["normal", "flexi"].includes(data.shift)) {
 			return { ok: false as const, reason: "Invalid shift" };
 		}
+		if (data.supervisorId !== undefined && data.supervisorId !== null) {
+			if (data.supervisorId === data.employeeId) {
+				return {
+					ok: false as const,
+					reason: "An employee cannot be their own supervisor",
+				};
+			}
+			let cursor: string | null = data.supervisorId;
+			for (let depth = 0; cursor && depth < 25; depth += 1) {
+				if (cursor === data.employeeId) {
+					return {
+						ok: false as const,
+						reason: "This would create a supervision loop",
+					};
+				}
+				const [step] = await db
+					.select({ supervisorId: employee.supervisorId })
+					.from(employee)
+					.where(
+						and(eq(employee.id, cursor), eq(employee.organizationId, orgId)),
+					)
+					.limit(1);
+				cursor = step?.supervisorId ?? null;
+			}
+			const [supervisorRow] = await db
+				.select({ isActive: employee.isActive })
+				.from(employee)
+				.where(
+					and(
+						eq(employee.id, data.supervisorId),
+						eq(employee.organizationId, orgId),
+					),
+				)
+				.limit(1);
+			if (!supervisorRow || !supervisorRow.isActive) {
+				return {
+					ok: false as const,
+					reason: "Supervisor must be an active employee",
+				};
+			}
+		}
 		await db
 			.update(employee)
 			.set({
@@ -196,6 +243,9 @@ export const updateEmployee = createServerFn({ method: "POST" })
 				...(data.shift !== undefined ? { shift: data.shift } : {}),
 				...(data.joinedAt !== undefined
 					? { joinedAt: data.joinedAt ? new Date(data.joinedAt) : null }
+					: {}),
+				...(data.supervisorId !== undefined
+					? { supervisorId: data.supervisorId }
 					: {}),
 			})
 			.where(eq(employee.id, data.employeeId));

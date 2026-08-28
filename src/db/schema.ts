@@ -1,4 +1,5 @@
 import {
+	type AnySQLiteColumn,
 	integer,
 	sqliteTable,
 	text,
@@ -116,6 +117,10 @@ export const employee = sqliteTable(
 			.notNull()
 			.references(() => organization.id, { onDelete: "cascade" }),
 		userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+		supervisorId: text("supervisor_id").references(
+			(): AnySQLiteColumn => employee.id,
+			{ onDelete: "set null" },
+		),
 		name: text("name").notNull(),
 		employeeNo: text("employee_no").notNull(),
 		position: text("position"),
@@ -130,6 +135,77 @@ export const employee = sqliteTable(
 			table.employeeNo,
 		),
 		uniqueIndex("employee_org_user_uq").on(table.organizationId, table.userId),
+	],
+);
+
+export const leaveType = sqliteTable(
+	"leave_type",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		quotaDays: integer("quota_days"),
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+	},
+	(table) => [
+		uniqueIndex("leave_type_org_name_uq").on(table.organizationId, table.name),
+	],
+);
+
+export const leaveRequest = sqliteTable("leave_request", {
+	id: text("id").primaryKey(),
+	organizationId: text("organization_id")
+		.notNull()
+		.references(() => organization.id, { onDelete: "cascade" }),
+	employeeId: text("employee_id")
+		.notNull()
+		.references(() => employee.id, { onDelete: "cascade" }),
+	leaveTypeId: text("leave_type_id")
+		.notNull()
+		.references(() => leaveType.id, { onDelete: "cascade" }),
+	startDate: text("start_date").notNull(),
+	endDate: text("end_date").notNull(),
+	days: integer("days").notNull(),
+	reason: text("reason").notNull(),
+	status: text("status").notNull().default("pending"),
+	decidedBy: text("decided_by").references(() => user.id, {
+		onDelete: "set null",
+	}),
+	decidedAt: integer("decided_at", { mode: "timestamp" }),
+	decisionReason: text("decision_reason"),
+	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});
+
+export const attendanceIssue = sqliteTable(
+	"attendance_issue",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		employeeId: text("employee_id")
+			.notNull()
+			.references(() => employee.id, { onDelete: "cascade" }),
+		date: text("date").notNull(),
+		type: text("type").notNull(),
+		justification: text("justification"),
+		status: text("status").notNull().default("open"),
+		verifiedBy: text("verified_by").references(() => user.id, {
+			onDelete: "set null",
+		}),
+		verifiedAt: integer("verified_at", { mode: "timestamp" }),
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+	},
+	(table) => [
+		uniqueIndex("attendance_issue_uq").on(
+			table.employeeId,
+			table.date,
+			table.type,
+		),
 	],
 );
 

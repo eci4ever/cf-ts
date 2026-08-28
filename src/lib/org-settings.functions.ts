@@ -79,6 +79,40 @@ export const getOrgSettings = createServerFn({ method: "GET" }).handler(
 	},
 );
 
+export const setMemberRole = createServerFn({ method: "POST" })
+	.validator((input: { userId: string; role: string }) => input)
+	.handler(async ({ data }) => {
+		const { orgId } = await requireOrgRole(["owner", "admin"]);
+		const { role } = data;
+		if (!["member", "supervisor", "admin"].includes(role)) {
+			return { ok: false as const, reason: "Invalid role" };
+		}
+		const db = getDb();
+		const [targetMember] = await db
+			.select({ role: member.role })
+			.from(member)
+			.where(
+				and(eq(member.organizationId, orgId), eq(member.userId, data.userId)),
+			)
+			.limit(1);
+		if (!targetMember) {
+			return { ok: false as const, reason: "Member not found" };
+		}
+		if (targetMember.role === "owner") {
+			return {
+				ok: false as const,
+				reason: "Use ownership transfer to change the owner's role",
+			};
+		}
+		await db
+			.update(member)
+			.set({ role })
+			.where(
+				and(eq(member.organizationId, orgId), eq(member.userId, data.userId)),
+			);
+		return { ok: true as const };
+	});
+
 export const updateSchedule = createServerFn({ method: "POST" })
 	.validator(
 		(input: {

@@ -3,7 +3,7 @@ import {
 	redirect,
 	useRouteContext,
 } from "@tanstack/react-router";
-import { LogIn, LogOut, PlusSquare } from "lucide-react";
+import { Check, LogIn, LogOut, PlusSquare, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
@@ -34,13 +34,18 @@ import {
 	TableRow,
 } from "#/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "#/components/ui/tabs";
+import { Textarea } from "#/components/ui/textarea";
 import {
 	adminListAttendance,
 	adminUpsertAttendance,
 	clockIn,
 	clockOut,
 	getTodayAttendance,
+	listIssuesForReview,
 	listMyAttendance,
+	listMyIssues,
+	submitJustification,
+	verifyIssue,
 } from "#/lib/attendance.functions";
 import { getSession } from "#/lib/auth.functions";
 import {
@@ -86,22 +91,31 @@ type TodayData = {
 
 function AttendancePage() {
 	const { orgRole } = useRouteContext({ from: "/_app" });
-	const isAdmin = orgRole === "admin" || orgRole === "owner";
+	const canViewAll =
+		orgRole === "admin" || orgRole === "owner" || orgRole === "supervisor";
+	const canReview =
+		orgRole === "admin" || orgRole === "owner" || orgRole === "supervisor";
 
 	return (
 		<Tabs defaultValue="me" className="gap-4">
 			<TabsList>
 				<TabsTrigger value="me">My attendance</TabsTrigger>
-				{isAdmin ? <TabsTrigger value="all">All attendance</TabsTrigger> : null}
+				{canViewAll ? (
+					<TabsTrigger value="all">All attendance</TabsTrigger>
+				) : null}
+				<TabsTrigger value="issues">Issues</TabsTrigger>
 			</TabsList>
 			<TabsContent value="me">
 				<MyAttendanceTab />
 			</TabsContent>
-			{isAdmin ? (
+			{canViewAll ? (
 				<TabsContent value="all">
 					<AllAttendanceTab />
 				</TabsContent>
 			) : null}
+			<TabsContent value="issues">
+				<IssuesTab canReview={canReview} />
+			</TabsContent>
 		</Tabs>
 	);
 }
@@ -556,6 +570,306 @@ function AttendanceEntryDialog({
 					<DialogFooter>
 						<Button type="submit" disabled={pending}>
 							{pending ? "Saving..." : "Save attendance"}
+						</Button>
+					</DialogFooter>
+				</form>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+type IssueRow = {
+	id: string;
+	employeeId: string;
+	employeeName?: string;
+	employeeNo?: string;
+	date: string;
+	type: string;
+	justification: string | null;
+	status: string;
+};
+
+function IssueTypeBadge({ type }: { type: string }) {
+	return (
+		<Badge variant={type === "absent" ? "destructive" : "secondary"}>
+			{type.replace(/_/g, " ")}
+		</Badge>
+	);
+}
+
+function IssueStatusBadge({ status }: { status: string }) {
+	const variant =
+		status === "verified"
+			? "secondary"
+			: status === "rejected"
+				? "destructive"
+				: "outline";
+	return <Badge variant={variant}>{status}</Badge>;
+}
+
+function IssuesTab({ canReview }: { canReview: boolean }) {
+	return (
+		<div className="flex flex-col gap-4">
+			{canReview ? <IssueReviewCard /> : null}
+			<MyIssuesCard />
+		</div>
+	);
+}
+
+function IssueReviewCard() {
+	const [issues, setIssues] = useState<IssueRow[]>([]);
+	const [loading, setLoading] = useState(true);
+
+	const load = useCallback(async () => {
+		setLoading(true);
+		const result = await listIssuesForReview();
+		setIssues(result.issues as IssueRow[]);
+		setLoading(false);
+	}, []);
+
+	useEffect(() => {
+		load();
+	}, [load]);
+
+	async function handleVerify(
+		issueId: string,
+		decision: "verified" | "rejected",
+	) {
+		const result = await verifyIssue({ data: { issueId, decision } });
+		if (!result.ok) {
+			toast.error(result.reason);
+			return;
+		}
+		toast.success(
+			decision === "verified"
+				? "Justification verified"
+				: "Justification rejected",
+		);
+		await load();
+	}
+
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Justifications awaiting verification</CardTitle>
+				<CardDescription>
+					Review justifications submitted for attendance issues in your scope.
+				</CardDescription>
+			</CardHeader>
+			<CardContent>
+				{loading ? (
+					<p className="text-sm text-muted-foreground">Loading…</p>
+				) : issues.length === 0 ? (
+					<p className="text-sm text-muted-foreground">
+						Nothing to review right now.
+					</p>
+				) : (
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>Employee</TableHead>
+								<TableHead>Date</TableHead>
+								<TableHead>Issue</TableHead>
+								<TableHead>Justification</TableHead>
+								<TableHead className="w-24" />
+							</TableRow>
+						</TableHeader>
+						<TableBody>
+							{issues
+								.filter((issue) => issue.status === "pending")
+								.map((issue) => (
+									<TableRow key={issue.id}>
+										<TableCell className="font-medium">
+											{issue.employeeName}
+											<span className="ml-2 text-xs text-muted-foreground">
+												{issue.employeeNo}
+											</span>
+										</TableCell>
+										<TableCell>{issue.date}</TableCell>
+										<TableCell>
+											<IssueTypeBadge type={issue.type} />
+										</TableCell>
+										<TableCell className="max-w-64 text-sm">
+											{issue.justification ?? "—"}
+										</TableCell>
+										<TableCell>
+											<div className="flex gap-1">
+												<Button
+													variant="ghost"
+													size="icon"
+													aria-label="Verify justification"
+													onClick={() => handleVerify(issue.id, "verified")}
+												>
+													<Check />
+												</Button>
+												<Button
+													variant="ghost"
+													size="icon"
+													aria-label="Reject justification"
+													onClick={() => handleVerify(issue.id, "rejected")}
+												>
+													<X />
+												</Button>
+											</div>
+										</TableCell>
+									</TableRow>
+								))}
+						</TableBody>
+					</Table>
+				)}
+			</CardContent>
+		</Card>
+	);
+}
+
+function MyIssuesCard() {
+	const [issues, setIssues] = useState<IssueRow[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [justifying, setJustifying] = useState<IssueRow | null>(null);
+
+	const load = useCallback(async () => {
+		setLoading(true);
+		const rows = await listMyIssues();
+		setIssues(rows as IssueRow[]);
+		setLoading(false);
+	}, []);
+
+	useEffect(() => {
+		load();
+	}, [load]);
+
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>My attendance issues</CardTitle>
+				<CardDescription>
+					Submit a justification for flagged days — your supervisor will verify
+					it.
+				</CardDescription>
+			</CardHeader>
+			<CardContent>
+				{loading ? (
+					<p className="text-sm text-muted-foreground">Loading…</p>
+				) : issues.length === 0 ? (
+					<p className="text-sm text-muted-foreground">
+						No attendance issues this month. Keep it up!
+					</p>
+				) : (
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>Date</TableHead>
+								<TableHead>Issue</TableHead>
+								<TableHead>Justification</TableHead>
+								<TableHead>Status</TableHead>
+								<TableHead className="w-12" />
+							</TableRow>
+						</TableHeader>
+						<TableBody>
+							{issues.map((issue) => (
+								<TableRow key={issue.id}>
+									<TableCell>{issue.date}</TableCell>
+									<TableCell>
+										<IssueTypeBadge type={issue.type} />
+									</TableCell>
+									<TableCell className="max-w-64 text-sm">
+										{issue.justification ?? "—"}
+									</TableCell>
+									<TableCell>
+										<IssueStatusBadge status={issue.status} />
+									</TableCell>
+									<TableCell>
+										{issue.status !== "verified" ? (
+											<Button
+												variant="ghost"
+												size="sm"
+												onClick={() => setJustifying(issue)}
+											>
+												{issue.justification ? "Edit" : "Justify"}
+											</Button>
+										) : null}
+									</TableCell>
+								</TableRow>
+							))}
+						</TableBody>
+					</Table>
+				)}
+			</CardContent>
+			<JustificationDialog
+				issue={justifying}
+				onOpenChange={(open) => {
+					if (!open) {
+						setJustifying(null);
+					}
+				}}
+				onSaved={async () => {
+					setJustifying(null);
+					toast.success("Justification submitted for verification");
+					await load();
+				}}
+			/>
+		</Card>
+	);
+}
+
+function JustificationDialog({
+	issue,
+	onOpenChange,
+	onSaved,
+}: {
+	issue: IssueRow | null;
+	onOpenChange: (open: boolean) => void;
+	onSaved: () => Promise<void>;
+}) {
+	const [text, setText] = useState("");
+	const [pending, setPending] = useState(false);
+
+	useEffect(() => {
+		if (issue) {
+			setText(issue.justification ?? "");
+		}
+	}, [issue]);
+
+	async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		if (!issue) {
+			return;
+		}
+		setPending(true);
+		const result = await submitJustification({
+			data: { issueId: issue.id, justification: text },
+		});
+		setPending(false);
+
+		if (!result.ok) {
+			toast.error(result.reason);
+			return;
+		}
+		await onSaved();
+	}
+
+	return (
+		<Dialog open={issue !== null} onOpenChange={onOpenChange}>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>
+						Justification — {issue?.date ?? ""}{" "}
+						{issue ? <IssueTypeBadge type={issue.type} /> : null}
+					</DialogTitle>
+					<DialogDescription>
+						Explain the attendance issue. Your supervisor will verify it.
+					</DialogDescription>
+				</DialogHeader>
+				<form onSubmit={handleSubmit} className="flex flex-col gap-4">
+					<Textarea
+						value={text}
+						onChange={(event) => setText(event.target.value)}
+						required
+						minLength={5}
+					/>
+					<DialogFooter>
+						<Button type="submit" disabled={pending}>
+							{pending ? "Submitting…" : "Submit justification"}
 						</Button>
 					</DialogFooter>
 				</form>
