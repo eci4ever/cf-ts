@@ -29,6 +29,13 @@
       "when": 1787892820385,
       "tag": "0003_optimal_taskmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787902036718,
+      "tag": "0004_whole_skullbuster",
+      "breakpoints": true
     }
   ]
 }

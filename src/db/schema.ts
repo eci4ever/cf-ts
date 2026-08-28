@@ -100,8 +100,66 @@ export const organization = sqliteTable("organization", {
 	pendingPlan: text("pending_plan"),
 	balanceSen: integer("balance_sen").notNull().default(0),
 	paidUntil: integer("paid_until", { mode: "timestamp" }),
+	workDays: text("work_days").notNull().default("1,2,3,4,5"),
+	workStartMinutes: integer("work_start_minutes").notNull().default(540),
+	workEndMinutes: integer("work_end_minutes").notNull().default(1080),
+	graceMinutes: integer("grace_minutes").notNull().default(15),
+	timezone: text("timezone").notNull().default("Asia/Kuala_Lumpur"),
 	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
+
+export const employee = sqliteTable(
+	"employee",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+		name: text("name").notNull(),
+		employeeNo: text("employee_no").notNull(),
+		position: text("position"),
+		shift: text("shift").notNull().default("normal"),
+		joinedAt: integer("joined_at", { mode: "timestamp" }),
+		isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+	},
+	(table) => [
+		uniqueIndex("employee_org_no_uq").on(
+			table.organizationId,
+			table.employeeNo,
+		),
+		uniqueIndex("employee_org_user_uq").on(table.organizationId, table.userId),
+	],
+);
+
+export const attendance = sqliteTable(
+	"attendance",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		employeeId: text("employee_id")
+			.notNull()
+			.references(() => employee.id, { onDelete: "cascade" }),
+		date: text("date").notNull(),
+		clockIn: integer("clock_in", { mode: "timestamp" }).notNull(),
+		clockInStatus: text("clock_in_status").notNull(),
+		clockOut: integer("clock_out", { mode: "timestamp" }),
+		clockOutStatus: text("clock_out_status"),
+		note: text("note"),
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+	},
+	(table) => [
+		uniqueIndex("attendance_org_employee_date_uq").on(
+			table.organizationId,
+			table.employeeId,
+			table.date,
+		),
+	],
+);
 
 export const creditLedger = sqliteTable("credit_ledger", {
 	id: text("id").primaryKey(),

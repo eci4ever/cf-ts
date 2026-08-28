@@ -38,6 +38,7 @@ import {
 	getOrgSettings,
 	transferOwnership,
 	updateOrgName,
+	updateSchedule,
 } from "#/lib/org-settings.functions";
 
 export const Route = createFileRoute("/_app/settings")({
@@ -71,6 +72,7 @@ function SettingsPage() {
 	const [settings, setSettings] = useState<{
 		name: string;
 		slug: string;
+		schedule: ScheduleData;
 		role: string;
 		currentUserId: string;
 		members: MemberRow[];
@@ -101,6 +103,7 @@ function SettingsPage() {
 				slug={settings.slug}
 				onSaved={loadSettings}
 			/>
+			<ScheduleCard schedule={settings.schedule} onSaved={loadSettings} />
 			{isOwner ? (
 				<>
 					<TransferOwnershipCard
@@ -135,6 +138,153 @@ function SettingsPage() {
 				</Card>
 			)}
 		</div>
+	);
+}
+
+type ScheduleData = {
+	workDays: number[];
+	workStartMinutes: number;
+	workEndMinutes: number;
+	graceMinutes: number;
+	timezone: string;
+};
+
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function ScheduleCard({
+	schedule,
+	onSaved,
+}: {
+	schedule: ScheduleData;
+	onSaved: () => Promise<void>;
+}) {
+	const [days, setDays] = useState<number[]>(schedule.workDays);
+	const [startTime, setStartTime] = useState(
+		`${String(Math.floor(schedule.workStartMinutes / 60)).padStart(2, "0")}:${String(schedule.workStartMinutes % 60).padStart(2, "0")}`,
+	);
+	const [endTime, setEndTime] = useState(
+		`${String(Math.floor(schedule.workEndMinutes / 60)).padStart(2, "0")}:${String(schedule.workEndMinutes % 60).padStart(2, "0")}`,
+	);
+	const [grace, setGrace] = useState(String(schedule.graceMinutes));
+	const [timezone, setTimezone] = useState(schedule.timezone);
+	const [pending, setPending] = useState(false);
+
+	function toggleDay(day: number) {
+		setDays((previous) =>
+			previous.includes(day)
+				? previous.filter((value) => value !== day)
+				: [...previous, day].sort(),
+		);
+	}
+
+	async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		setPending(true);
+		const result = await updateSchedule({
+			data: {
+				workDays: days,
+				startTime,
+				endTime,
+				graceMinutes: Number(grace),
+				timezone,
+			},
+		});
+		setPending(false);
+
+		if (!result.ok) {
+			toast.error(result.reason);
+			return;
+		}
+		toast.success("Work schedule updated");
+		await onSaved();
+	}
+
+	const flexiHours = (
+		Math.round(
+			((schedule.workEndMinutes - schedule.workStartMinutes) / 60) * 10,
+		) / 10
+	).toString();
+
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle className="flex items-center gap-2">
+					<SettingsIcon />
+					Work schedule
+				</CardTitle>
+				<CardDescription>
+					Applies to the whole organization. Normal shift is late after{" "}
+					{startTime} + grace; Flexi is late after {startTime} sharp and targets{" "}
+					{flexiHours} hours from clock-in.
+				</CardDescription>
+			</CardHeader>
+			<CardContent>
+				<form onSubmit={handleSubmit} className="flex flex-col gap-4">
+					<div className="flex flex-col gap-2">
+						<Label>Work days</Label>
+						<div className="flex flex-wrap gap-2">
+							{DAY_LABELS.map((label, index) => (
+								<Button
+									key={label}
+									type="button"
+									variant={days.includes(index) ? "default" : "outline"}
+									size="sm"
+									onClick={() => toggleDay(index)}
+								>
+									{label}
+								</Button>
+							))}
+						</div>
+					</div>
+					<div className="grid gap-4 sm:grid-cols-4">
+						<div className="flex flex-col gap-2">
+							<Label htmlFor="schedule-start">Start time</Label>
+							<Input
+								id="schedule-start"
+								type="time"
+								value={startTime}
+								onChange={(event) => setStartTime(event.target.value)}
+								required
+							/>
+						</div>
+						<div className="flex flex-col gap-2">
+							<Label htmlFor="schedule-end">End time</Label>
+							<Input
+								id="schedule-end"
+								type="time"
+								value={endTime}
+								onChange={(event) => setEndTime(event.target.value)}
+								required
+							/>
+						</div>
+						<div className="flex flex-col gap-2">
+							<Label htmlFor="schedule-grace">Grace (minutes)</Label>
+							<Input
+								id="schedule-grace"
+								type="number"
+								min={0}
+								max={240}
+								value={grace}
+								onChange={(event) => setGrace(event.target.value)}
+								required
+							/>
+						</div>
+						<div className="flex flex-col gap-2">
+							<Label htmlFor="schedule-timezone">Timezone</Label>
+							<Input
+								id="schedule-timezone"
+								value={timezone}
+								onChange={(event) => setTimezone(event.target.value)}
+								required
+							/>
+						</div>
+					</div>
+					<Button type="submit" disabled={pending} className="w-fit">
+						{pending ? "Saving..." : "Save schedule"}
+					</Button>
+				</form>
+			</CardContent>
+		</Card>
 	);
 }
 
