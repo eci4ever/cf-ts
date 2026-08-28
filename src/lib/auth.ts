@@ -19,6 +19,19 @@ function createAuth() {
 		}),
 		emailAndPassword: {
 			enabled: true,
+			sendResetPassword: async ({ user, url }) => {
+				const brand = env.EMAIL_BRAND_NAME || "Attendance Management System";
+				await sendEmail({
+					to: user.email,
+					subject: `Reset your password on ${brand}`,
+					html: `
+						<p>Hi ${user.name},</p>
+						<p>We received a request to reset your password for your ${brand} account.</p>
+						<p><a href="${url}">Reset your password</a></p>
+						<p>This link expires in 1 hour. If you didn't request a password reset, you can safely ignore this email.</p>
+					`,
+				});
+			},
 		},
 		emailVerification: {
 			sendOnSignUp: true,
