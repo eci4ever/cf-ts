@@ -148,10 +148,16 @@ export function DataTable<TData>({
 					<TableBody>
 						{loading ? (
 							Array.from({ length: 5 }).map((_, rowIndex) => (
-								<TableRow key={rowIndex}>
+								<TableRow
+									// biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders have no stable identity
+									key={rowIndex}
+								>
 									{Array.from({ length: columnCount }).map(
 										(__, columnIndex) => (
-											<TableCell key={columnIndex}>
+											<TableCell
+												// biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders have no stable identity
+												key={columnIndex}
+											>
 												<Skeleton className="h-5 w-full" />
 											</TableCell>
 										),
