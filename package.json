@@ -10,6 +10,8 @@
     "generate-routes": "tsr generate",
     "build": "vite build",
     "preview": "npm run build && vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "format": "biome format",
     "lint": "biome lint",
     "check": "biome check",
@@ -62,6 +64,7 @@
     "drizzle-kit": "^0.31.10",
     "typescript": "^6.0.2",
     "vite": "^8.0.0",
+    "vitest": "^4.1.11",
     "wrangler": "^4.127.0"
   },
   "pnpm": {

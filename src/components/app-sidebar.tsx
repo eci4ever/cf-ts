@@ -4,6 +4,7 @@ import {
 	BarChart3,
 	CalendarDays,
 	LayoutDashboard,
+	Settings,
 	ShieldCheck,
 	Timer,
 	UserCog,
@@ -55,6 +56,12 @@ const navGroups: NavGroup[] = [
 			{ title: "Reports", to: "/reports", icon: BarChart3, orgAdminOnly: true },
 			{ title: "Team", to: "/team", icon: UserCog, orgAdminOnly: true },
 			{ title: "Billing", to: "/billing", icon: Wallet, orgAdminOnly: true },
+			{
+				title: "Settings",
+				to: "/settings",
+				icon: Settings,
+				orgAdminOnly: true,
+			},
 		],
 	},
 	{
