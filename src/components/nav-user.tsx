@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronsUpDown, LogOut } from "lucide-react";
+import { ChevronsUpDown, LogOut, VenetianMask } from "lucide-react";
 import { Avatar, AvatarFallback } from "#/components/ui/avatar";
 import {
 	DropdownMenu,
@@ -27,6 +27,13 @@ export function NavUser() {
 		await authClient.signOut();
 		await navigate({ to: "/login" });
 	}
+
+	async function handleStopImpersonating() {
+		await authClient.admin.stopImpersonating();
+		await navigate({ to: "/admin" });
+	}
+
+	const isImpersonating = Boolean(data?.session.impersonatedBy);
 
 	return (
 		<SidebarMenu>
@@ -73,6 +80,12 @@ export function NavUser() {
 							</div>
 						</DropdownMenuLabel>
 						<DropdownMenuSeparator />
+						{isImpersonating ? (
+							<DropdownMenuItem onClick={handleStopImpersonating}>
+								<VenetianMask />
+								Stop impersonating
+							</DropdownMenuItem>
+						) : null}
 						<DropdownMenuItem onClick={handleSignOut}>
 							<LogOut />
 							Log out

@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { PageShell } from "#/components/page-shell";
 import { getSession } from "#/lib/auth.functions";
+import { getMyOrgRole } from "#/lib/org.functions";
 
 export const Route = createFileRoute("/_app")({
 	beforeLoad: async () => {
@@ -13,6 +14,14 @@ export const Route = createFileRoute("/_app")({
 		if (!session) {
 			throw redirect({ to: "/login" });
 		}
+		if (!session.session.activeOrganizationId) {
+			throw redirect({ to: "/onboarding" });
+		}
+		const orgRole = await getMyOrgRole();
+		return {
+			orgRole,
+			isPlatformAdmin: session.user.role?.split(",").includes("admin") ?? false,
+		};
 	},
 	component: AppLayout,
 });

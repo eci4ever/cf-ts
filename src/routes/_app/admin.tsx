@@ -1,5 +1,5 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
-import { MoreHorizontal, ShieldOff, UserCog } from "lucide-react";
+import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { MoreHorizontal, ShieldOff, UserCog, VenetianMask } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -46,6 +46,7 @@ type UserRow = {
 };
 
 function AdminPage() {
+	const router = useRouter();
 	const [users, setUsers] = useState<UserRow[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -81,6 +82,16 @@ function AdminPage() {
 	async function handleUnban(userId: string) {
 		await authClient.admin.unbanUser({ userId });
 		await loadUsers();
+	}
+
+	async function handleImpersonate(userId: string) {
+		const { error } = await authClient.admin.impersonateUser({ userId });
+		if (error) {
+			setError(error.message ?? "Failed to impersonate user");
+			return;
+		}
+		await router.invalidate();
+		await router.navigate({ to: "/dashboard" });
 	}
 
 	return (
@@ -148,6 +159,12 @@ function AdminPage() {
 											</DropdownMenuTrigger>
 											<DropdownMenuContent align="end">
 												<DropdownMenuLabel>Actions</DropdownMenuLabel>
+												<DropdownMenuItem
+													onClick={() => handleImpersonate(user.id)}
+												>
+													<VenetianMask />
+													Impersonate
+												</DropdownMenuItem>
 												{user.role?.split(",").includes("admin") ? (
 													<DropdownMenuItem
 														onClick={() => handleSetRole(user.id, "user")}

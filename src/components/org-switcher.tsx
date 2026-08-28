@@ -1,3 +1,4 @@
+import { useRouter } from "@tanstack/react-router";
 import { CalendarCheck, Check, ChevronsUpDown, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "#/components/ui/button";
@@ -29,6 +30,7 @@ import {
 import { authClient } from "#/lib/auth-client";
 
 export function OrgSwitcher() {
+	const router = useRouter();
 	const { isMobile } = useSidebar();
 	const { data: organizations, isPending } = authClient.useListOrganizations();
 	const { data: activeOrganization } = authClient.useActiveOrganization();
@@ -73,6 +75,7 @@ export function OrgSwitcher() {
 		}
 
 		await authClient.organization.setActive({ organizationId: data.id });
+		await router.invalidate();
 		setPending(false);
 		setOpen(false);
 		setName("");
@@ -120,11 +123,12 @@ export function OrgSwitcher() {
 							(organizations ?? []).map((org) => (
 								<DropdownMenuItem
 									key={org.id}
-									onClick={() =>
-										authClient.organization.setActive({
+									onClick={async () => {
+										await authClient.organization.setActive({
 											organizationId: org.id,
-										})
-									}
+										});
+										await router.invalidate();
+									}}
 								>
 									<span className="flex size-6 shrink-0 items-center justify-center rounded-md border text-xs font-semibold">
 										{org.name.charAt(0).toUpperCase()}

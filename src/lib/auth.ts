@@ -1,14 +1,18 @@
+import { env } from "cloudflare:workers";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin, organization } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { getDb } from "#/db";
 import * as schema from "#/db/schema";
 import { member } from "#/db/schema";
+import { sendEmail } from "./email";
 
 function createAuth() {
+	const baseURL = env.BETTER_AUTH_URL || "http://localhost:3000";
 	return betterAuth({
+		baseURL,
 		database: drizzleAdapter(getDb(), {
 			provider: "sqlite",
 			schema,
@@ -16,25 +20,27 @@ function createAuth() {
 		emailAndPassword: {
 			enabled: true,
 		},
-		plugins: [admin(), organization(), tanstackStartCookies()],
-		databaseHooks: {
-			user: {
-				create: {
-					after: async (user) => {
-						await getAuth().api.createOrganization({
-							body: {
-								name: `${user.name}'s workspace`,
-								slug: `${user.name
-									.toLowerCase()
-									.replace(/[^a-z0-9]+/g, "-")
-									.replace(/(^-|-$)/g, "")
-									.slice(0, 32)}-${crypto.randomUUID().slice(0, 8)}`,
-								userId: user.id,
-							},
-						});
-					},
+		plugins: [
+			admin(),
+			organization({
+				sendInvitationEmail: async ({ invitation, organization }) => {
+					const brand = env.EMAIL_BRAND_NAME || "Attendance Management System";
+					await sendEmail({
+						to: invitation.email,
+						subject: `You're invited to join ${organization.name} on ${brand}`,
+						idempotencyKey: `invite/${invitation.id}`,
+						html: `
+							<p>Hi,</p>
+							<p>You have been invited to join <strong>${organization.name}</strong> on ${brand} as <strong>${invitation.role ?? "member"}</strong>.</p>
+							<p><a href="${baseURL}/onboarding">Accept your invitation</a> by signing in with this email address.</p>
+							<p>This invitation expires on ${new Date(invitation.expiresAt).toUTCString()}.</p>
+						`,
+					});
 				},
-			},
+			}),
+			tanstackStartCookies(),
+		],
+		databaseHooks: {
 			session: {
 				create: {
 					before: async (session) => {
@@ -42,6 +48,7 @@ function createAuth() {
 							.select({ organizationId: member.organizationId })
 							.from(member)
 							.where(eq(member.userId, session.userId))
+							.orderBy(asc(member.createdAt))
 							.limit(1);
 						return {
 							data: {
