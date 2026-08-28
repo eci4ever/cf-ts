@@ -2,11 +2,15 @@ import {
 	createFileRoute,
 	Outlet,
 	redirect,
+	useRouter,
 	useRouterState,
 } from "@tanstack/react-router";
+import { VenetianMask } from "lucide-react";
 import { PageShell } from "#/components/page-shell";
 import { Badge } from "#/components/ui/badge";
+import { Button } from "#/components/ui/button";
 import { getSession } from "#/lib/auth.functions";
+import { authClient } from "#/lib/auth-client";
 import { ensureSubscription } from "#/lib/billing.functions";
 import { getMyOrgRole } from "#/lib/org.functions";
 import { GRACE_MS, PLANS } from "#/lib/subscription";
@@ -68,6 +72,38 @@ function SubscriptionBanner() {
 	return null;
 }
 
+function ImpersonationBanner() {
+	const router = useRouter();
+	const { data } = authClient.useSession();
+	if (!data?.session.impersonatedBy) {
+		return null;
+	}
+	return (
+		<div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 text-sm">
+			<Badge variant="outline">
+				<VenetianMask />
+				Impersonating
+			</Badge>
+			<span>
+				You are signed in as <strong>{data.user.name}</strong> (
+				{data.user.email}) through admin impersonation.
+			</span>
+			<Button
+				variant="outline"
+				size="sm"
+				className="ml-auto"
+				onClick={async () => {
+					await authClient.admin.stopImpersonating();
+					await router.invalidate();
+					await router.navigate({ to: "/admin" });
+				}}
+			>
+				Stop impersonating
+			</Button>
+		</div>
+	);
+}
+
 function AppLayout() {
 	const matches = useRouterState({ select: (state) => state.matches });
 	const lastMatch = matches[matches.length - 1];
@@ -77,6 +113,7 @@ function AppLayout() {
 
 	return (
 		<PageShell title={title}>
+			<ImpersonationBanner />
 			<SubscriptionBanner />
 			<Outlet />
 		</PageShell>

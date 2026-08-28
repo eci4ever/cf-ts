@@ -1,14 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeaders } from "@tanstack/react-start/server";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { getDb } from "#/db";
 import { invitation, member, organization, user } from "#/db/schema";
-import { getAuth } from "./auth";
-
-async function getCurrentSession() {
-	const headers = getRequestHeaders();
-	return getAuth().api.getSession({ headers });
-}
+import { getCurrentSession } from "./session";
 
 export const listOrgMembers = createServerFn({ method: "GET" }).handler(
 	async () => {

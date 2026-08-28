@@ -1,9 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeaders } from "@tanstack/react-start/server";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "#/db";
 import { creditLedger, member, organization } from "#/db/schema";
-import { getAuth } from "./auth";
+import { getCurrentSession } from "./session";
 import {
 	addMonths,
 	GRACE_MS,
@@ -15,11 +14,6 @@ import {
 	type SubscriptionStatus,
 	WARN_MS,
 } from "./subscription";
-
-async function getCurrentSession() {
-	const headers = getRequestHeaders();
-	return getAuth().api.getSession({ headers });
-}
 
 export type SubscriptionState = {
 	plan: PlanId;
