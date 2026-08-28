@@ -96,6 +96,25 @@ export const organization = sqliteTable("organization", {
 	slug: text("slug").notNull().unique(),
 	logo: text("logo"),
 	metadata: text("metadata"),
+	plan: text("plan").notNull().default("free"),
+	pendingPlan: text("pending_plan"),
+	balanceSen: integer("balance_sen").notNull().default(0),
+	paidUntil: integer("paid_until", { mode: "timestamp" }),
+	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const creditLedger = sqliteTable("credit_ledger", {
+	id: text("id").primaryKey(),
+	organizationId: text("organization_id")
+		.notNull()
+		.references(() => organization.id, { onDelete: "cascade" }),
+	type: text("type").notNull(),
+	amountSen: integer("amount_sen").notNull(),
+	balanceAfterSen: integer("balance_after_sen").notNull(),
+	note: text("note"),
+	createdBy: text("created_by").references(() => user.id, {
+		onDelete: "set null",
+	}),
 	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 

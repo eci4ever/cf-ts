@@ -19,6 +19,7 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as AppAccountRouteImport } from './routes/_app/account'
 import { Route as AppAdminRouteImport } from './routes/_app/admin'
 import { Route as AppAttendanceRouteImport } from './routes/_app/attendance'
+import { Route as AppBillingRouteImport } from './routes/_app/billing'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppEmployeesRouteImport } from './routes/_app/employees'
 import { Route as AppLeaveRouteImport } from './routes/_app/leave'
@@ -75,6 +76,11 @@ const AppAttendanceRoute = AppAttendanceRouteImport.update({
   path: '/attendance',
   getParentRoute: () => AppRoute,
 } as any)
+const AppBillingRoute = AppBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -116,6 +122,7 @@ export interface FileRoutesByFullPath {
   '/account': typeof AppAccountRoute
   '/admin': typeof AppAdminRoute
   '/attendance': typeof AppAttendanceRoute
+  '/billing': typeof AppBillingRoute
   '/dashboard': typeof AppDashboardRoute
   '/employees': typeof AppEmployeesRoute
   '/leave': typeof AppLeaveRoute
@@ -133,6 +140,7 @@ export interface FileRoutesByTo {
   '/account': typeof AppAccountRoute
   '/admin': typeof AppAdminRoute
   '/attendance': typeof AppAttendanceRoute
+  '/billing': typeof AppBillingRoute
   '/dashboard': typeof AppDashboardRoute
   '/employees': typeof AppEmployeesRoute
   '/leave': typeof AppLeaveRoute
@@ -152,6 +160,7 @@ export interface FileRoutesById {
   '/_app/account': typeof AppAccountRoute
   '/_app/admin': typeof AppAdminRoute
   '/_app/attendance': typeof AppAttendanceRoute
+  '/_app/billing': typeof AppBillingRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/employees': typeof AppEmployeesRoute
   '/_app/leave': typeof AppLeaveRoute
@@ -171,6 +180,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/admin'
     | '/attendance'
+    | '/billing'
     | '/dashboard'
     | '/employees'
     | '/leave'
@@ -188,6 +198,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/admin'
     | '/attendance'
+    | '/billing'
     | '/dashboard'
     | '/employees'
     | '/leave'
@@ -206,6 +217,7 @@ export interface FileRouteTypes {
     | '/_app/account'
     | '/_app/admin'
     | '/_app/attendance'
+    | '/_app/billing'
     | '/_app/dashboard'
     | '/_app/employees'
     | '/_app/leave'
@@ -297,6 +309,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAttendanceRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/billing': {
+      id: '/_app/billing'
+      path: '/billing'
+      fullPath: '/billing'
+      preLoaderRoute: typeof AppBillingRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/dashboard': {
       id: '/_app/dashboard'
       path: '/dashboard'
@@ -346,6 +365,7 @@ interface AppRouteChildren {
   AppAccountRoute: typeof AppAccountRoute
   AppAdminRoute: typeof AppAdminRoute
   AppAttendanceRoute: typeof AppAttendanceRoute
+  AppBillingRoute: typeof AppBillingRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppEmployeesRoute: typeof AppEmployeesRoute
   AppLeaveRoute: typeof AppLeaveRoute
@@ -357,6 +377,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAccountRoute: AppAccountRoute,
   AppAdminRoute: AppAdminRoute,
   AppAttendanceRoute: AppAttendanceRoute,
+  AppBillingRoute: AppBillingRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppEmployeesRoute: AppEmployeesRoute,
   AppLeaveRoute: AppLeaveRoute,

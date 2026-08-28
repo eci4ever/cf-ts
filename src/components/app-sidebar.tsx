@@ -8,6 +8,7 @@ import {
 	Timer,
 	UserCog,
 	Users,
+	Wallet,
 } from "lucide-react";
 import { NavUser } from "#/components/nav-user";
 import { OrgSwitcher } from "#/components/org-switcher";
@@ -40,6 +41,7 @@ const navItems: NavItem[] = [
 	{ title: "Leave", to: "/leave", icon: CalendarDays },
 	{ title: "Reports", to: "/reports", icon: BarChart3 },
 	{ title: "Team", to: "/team", icon: UserCog, orgAdminOnly: true },
+	{ title: "Billing", to: "/billing", icon: Wallet, orgAdminOnly: true },
 	{ title: "Admin", to: "/admin", icon: ShieldCheck, adminOnly: true },
 ];
 
