@@ -8,7 +8,7 @@ import {
 	UserCheck,
 	Users,
 } from "lucide-react";
-import { Avatar, AvatarFallback } from "#/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
@@ -34,6 +34,9 @@ function DashboardPage() {
 		<>
 			<div className="flex flex-col gap-4 rounded-xl border bg-card p-5 sm:flex-row sm:items-center">
 				<Avatar className="size-16 ring-2 ring-border">
+					{user?.image ? (
+						<AvatarImage src={user.image} alt={user?.name ?? "User avatar"} />
+					) : null}
 					<AvatarFallback className="text-xl">
 						{user?.name?.charAt(0).toUpperCase() ?? "U"}
 					</AvatarFallback>
