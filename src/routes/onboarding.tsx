@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	createFileRoute,
 	Link,
@@ -46,6 +46,7 @@ type InvitationRow = {
 
 function OnboardingPage() {
 	const router = useRouter();
+	const queryClient = useQueryClient();
 	const [name, setName] = useState("");
 	const [createPending, setCreatePending] = useState(false);
 	const [acceptingId, setAcceptingId] = useState<string | null>(null);
@@ -112,6 +113,7 @@ function OnboardingPage() {
 		}
 		setAcceptingId(null);
 		await router.invalidate();
+		queryClient.invalidateQueries({ queryKey: ["invitations", "mine"] });
 	}
 
 	async function handleSignOut() {
