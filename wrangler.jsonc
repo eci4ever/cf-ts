@@ -10,9 +10,10 @@
 		"nodejs_compat"
 	],
 	"main": "@tanstack/react-start/server-entry",
-	"custom_domains": [
+	"routes": [
 		{
-			"hostname": "tapme.nimfi.dev"
+			"pattern": "tapme.nimfi.dev",
+			"custom_domain": true
 		}
 	],
 	"observability": {
