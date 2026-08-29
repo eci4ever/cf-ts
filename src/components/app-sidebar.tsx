@@ -41,7 +41,7 @@ type NavGroup = {
 	items: NavItem[];
 };
 
-const navGroups: NavGroup[] = [
+export const navGroups: NavGroup[] = [
 	{
 		label: "Main",
 		items: [
@@ -79,7 +79,7 @@ const navGroups: NavGroup[] = [
 	},
 ];
 
-function visibleItems(
+export function visibleItems(
 	group: NavGroup,
 	isOrgAdmin: boolean,
 	isPlatformAdmin: boolean,

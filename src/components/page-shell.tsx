@@ -1,4 +1,5 @@
 import { AppSidebar } from "#/components/app-sidebar";
+import { MobileNavRail } from "#/components/mobile-nav-rail";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -21,8 +22,9 @@ export function PageShell({
 }) {
 	return (
 		<SidebarProvider>
+			<MobileNavRail />
 			<AppSidebar />
-			<SidebarInset>
+			<SidebarInset className="max-md:pl-12">
 				<header className="flex h-16 shrink-0 items-center gap-2">
 					<div className="flex items-center gap-2 px-4">
 						<SidebarTrigger className="-ml-1" />
