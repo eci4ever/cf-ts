@@ -1,8 +1,9 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { ChevronLeft, ChevronRight, Download, Printer } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { DataTable } from "#/components/data-table/data-table";
 import { Button } from "#/components/ui/button";
 import {
@@ -75,21 +76,15 @@ function ReportsPage() {
 		const now = new Date();
 		return { year: now.getFullYear(), month: now.getMonth() + 1 };
 	});
-	const [data, setData] = useState<ReportData | null>(null);
-	const [loading, setLoading] = useState(true);
-
-	const load = useCallback(async () => {
-		setLoading(true);
-		const result = (await getMonthlyReport({
-			data: { year: cursor.year, month: cursor.month },
-		})) as ReportData;
-		setData(result);
-		setLoading(false);
-	}, [cursor]);
-
-	useEffect(() => {
-		load();
-	}, [load]);
+	const reportQuery = useQuery({
+		queryKey: ["reports", "monthly", cursor.year, cursor.month],
+		queryFn: () =>
+			getMonthlyReport({
+				data: { year: cursor.year, month: cursor.month },
+			}) as Promise<ReportData>,
+	});
+	const data = reportQuery.data ?? null;
+	const loading = reportQuery.isPending;
 
 	const rows = data?.rows ?? [];
 	const columns = useMemo<ColumnDef<ReportRow>[]>(() => {

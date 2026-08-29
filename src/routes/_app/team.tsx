@@ -1,6 +1,7 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { Send, UserCog, UserMinus, UserPlus, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -80,71 +81,105 @@ type InvitationRow = {
 };
 
 function TeamPage() {
-	const [members, setMembers] = useState<MemberRow[]>([]);
-	const [invitations, setInvitations] = useState<InvitationRow[]>([]);
-	const [loading, setLoading] = useState(true);
-
+	const queryClient = useQueryClient();
 	const [inviteEmail, setInviteEmail] = useState("");
 	const [inviteRole, setInviteRole] = useState<"member" | "admin">("member");
-	const [invitePending, setInvitePending] = useState(false);
 
-	const loadAll = useCallback(async () => {
-		setLoading(true);
-		const [membersResult, invitationsResult] = await Promise.all([
-			listOrgMembers(),
-			listOrgInvitations(),
-		]);
-		setMembers(membersResult as MemberRow[]);
-		setInvitations(invitationsResult as InvitationRow[]);
-		setLoading(false);
-	}, []);
+	const membersQuery = useQuery({
+		queryKey: ["team", "members"],
+		queryFn: listOrgMembers,
+	});
+	const invitationsQuery = useQuery({
+		queryKey: ["team", "invitations"],
+		queryFn: listOrgInvitations,
+	});
+	const members = (membersQuery.data ?? []) as MemberRow[];
+	const invitations = (invitationsQuery.data ?? []) as InvitationRow[];
+	const invalidateTeam = () => {
+		queryClient.invalidateQueries({ queryKey: ["team"] });
+	};
 
-	useEffect(() => {
-		loadAll();
-	}, [loadAll]);
+	const inviteMutation = useMutation({
+		mutationFn: async (input: { email: string; role: "member" | "admin" }) => {
+			const { error } = await authClient.organization.inviteMember({
+				email: input.email,
+				role: input.role,
+			});
+			if (error) {
+				throw new Error(error.message ?? "Failed to send invitation");
+			}
+		},
+		onSuccess: (_result, variables) => {
+			setInviteEmail("");
+			toast.success(`Invitation sent to ${variables.email}`);
+			invalidateTeam();
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
+	const setRoleMutation = useMutation({
+		mutationFn: async (input: {
+			memberId: string;
+			role: "member" | "supervisor" | "admin";
+		}) => {
+			const result = await setMemberRole({
+				data: { userId: input.memberId, role: input.role },
+			});
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: (_result, variables) => {
+			toast.success(`Role updated to ${variables.role}`);
+			invalidateTeam();
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
+	const removeMutation = useMutation({
+		mutationFn: async (memberId: string) => {
+			await authClient.organization.removeMember({ memberIdOrEmail: memberId });
+		},
+		onSuccess: () => {
+			invalidateTeam();
+		},
+		onError: () => {
+			toast.error("Failed to remove member");
+		},
+	});
+	const cancelInviteMutation = useMutation({
+		mutationFn: async (invitationId: string) => {
+			await authClient.organization.cancelInvitation({ invitationId });
+		},
+		onSuccess: () => {
+			invalidateTeam();
+		},
+		onError: () => {
+			toast.error("Failed to cancel invitation");
+		},
+	});
 
-	async function handleInvite(event: React.FormEvent<HTMLFormElement>) {
+	function handleInvite(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setInvitePending(true);
-
-		const { error: inviteError } = await authClient.organization.inviteMember({
-			email: inviteEmail,
-			role: inviteRole,
-		});
-
-		setInvitePending(false);
-
-		if (inviteError) {
-			toast.error(inviteError.message ?? "Failed to send invitation");
-			return;
-		}
-
-		setInviteEmail("");
-		toast.success(`Invitation sent to ${inviteEmail}`);
-		await loadAll();
+		inviteMutation.mutate({ email: inviteEmail, role: inviteRole });
 	}
 
-	async function handleSetRole(
+	function handleSetRole(
 		memberId: string,
 		role: "member" | "supervisor" | "admin",
 	) {
-		const result = await setMemberRole({ data: { userId: memberId, role } });
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		toast.success(`Role updated to ${role}`);
-		await loadAll();
+		setRoleMutation.mutate({ memberId, role });
 	}
 
-	async function handleRemove(memberId: string) {
-		await authClient.organization.removeMember({ memberIdOrEmail: memberId });
-		await loadAll();
+	function handleRemove(memberId: string) {
+		removeMutation.mutate(memberId);
 	}
 
-	async function handleCancelInvitation(invitationId: string) {
-		await authClient.organization.cancelInvitation({ invitationId });
-		await loadAll();
+	function handleCancelInvitation(invitationId: string) {
+		cancelInviteMutation.mutate(invitationId);
 	}
 
 	return (
@@ -191,9 +226,9 @@ function TeamPage() {
 								</SelectContent>
 							</Select>
 						</div>
-						<Button type="submit" disabled={invitePending}>
+						<Button type="submit" disabled={inviteMutation.isPending}>
 							<Send />
-							{invitePending ? "Sending..." : "Send invite"}
+							{inviteMutation.isPending ? "Sending..." : "Send invite"}
 						</Button>
 					</form>
 				</CardContent>
@@ -215,7 +250,7 @@ function TeamPage() {
 							</TableRow>
 						</TableHeader>
 						<TableBody>
-							{loading ? (
+							{membersQuery.isPending ? (
 								<TableRow>
 									<TableCell colSpan={5}>Loading...</TableCell>
 								</TableRow>

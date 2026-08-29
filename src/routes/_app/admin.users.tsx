@@ -1,3 +1,4 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import {
 	type ColumnDef,
@@ -5,7 +6,7 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { MoreHorizontal, ShieldOff, UserCog, VenetianMask } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
 	DataTable,
@@ -73,9 +74,7 @@ const BAN_DURATIONS = [
 
 function UsersAdminPage() {
 	const router = useRouter();
-	const [users, setUsers] = useState<UserRow[]>([]);
-	const [total, setTotal] = useState(0);
-	const [loading, setLoading] = useState(true);
+	const queryClient = useQueryClient();
 	const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 25 });
 	const [searchInput, setSearchInput] = useState("");
 	const [search, setSearch] = useState("");
@@ -89,41 +88,77 @@ function UsersAdminPage() {
 		return () => clearTimeout(timer);
 	}, [searchInput]);
 
-	const loadUsers = useCallback(async () => {
-		setLoading(true);
-		const { data, error: listError } = await authClient.admin.listUsers({
-			query: {
-				limit: pagination.pageSize,
-				offset: pagination.pageIndex * pagination.pageSize,
-				searchValue: search || undefined,
-				searchField: "email",
-				searchOperator: "contains",
-				sortBy: "createdAt",
-				sortDirection: "desc",
-			},
-		});
-		if (listError) {
-			toast.error(listError.message ?? "Failed to load users");
-		} else {
-			setUsers((data?.users ?? []) as UserRow[]);
-			setTotal(data?.total ?? 0);
-		}
-		setLoading(false);
-	}, [pagination.pageSize, pagination.pageIndex, search]);
+	const usersQuery = useQuery({
+		queryKey: [
+			"admin",
+			"users",
+			pagination.pageSize,
+			pagination.pageIndex,
+			search,
+		],
+		queryFn: async () => {
+			const { data, error } = await authClient.admin.listUsers({
+				query: {
+					limit: pagination.pageSize,
+					offset: pagination.pageIndex * pagination.pageSize,
+					searchValue: search || undefined,
+					searchField: "email",
+					searchOperator: "contains",
+					sortBy: "createdAt",
+					sortDirection: "desc",
+				},
+			});
+			if (error) {
+				throw new Error(error.message ?? "Failed to load users");
+			}
+			return data;
+		},
+	});
+	const users = (usersQuery.data?.users ?? []) as UserRow[];
+	const total = usersQuery.data?.total ?? 0;
+	const loading = usersQuery.isPending;
+	const invalidateUsers = () =>
+		queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
 
-	useEffect(() => {
-		loadUsers();
-	}, [loadUsers]);
-
-	async function handleSetRole(userId: string, role: "user" | "admin") {
-		await authClient.admin.setRole({ userId, role });
-		await loadUsers();
-	}
-
-	async function handleUnban(userId: string) {
-		await authClient.admin.unbanUser({ userId });
-		await loadUsers();
-	}
+	const setRoleMutation = useMutation({
+		mutationFn: async (input: { userId: string; role: "user" | "admin" }) => {
+			await authClient.admin.setRole(input);
+		},
+		onSuccess: () => invalidateUsers(),
+		onError: () => toast.error("Failed to update role"),
+	});
+	const unbanMutation = useMutation({
+		mutationFn: async (userId: string) => {
+			await authClient.admin.unbanUser({ userId });
+		},
+		onSuccess: () => invalidateUsers(),
+		onError: () => toast.error("Failed to unban user"),
+	});
+	const banMutation = useMutation({
+		mutationFn: async (input: {
+			userId: string;
+			reason: string;
+			days: number;
+		}) => {
+			const { error } = await authClient.admin.banUser({
+				userId: input.userId,
+				banReason: input.reason,
+				...(input.days > 0 ? { banExpiresIn: input.days * 24 * 60 * 60 } : {}),
+			});
+			if (error) {
+				throw new Error(error.message ?? "Failed to ban user");
+			}
+		},
+		onSuccess: (_result, variables) => {
+			const target = users.find((user) => user.id === variables.userId);
+			toast.success(`${target?.email ?? "User"} banned`);
+			setBanTarget(null);
+			invalidateUsers();
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
 	async function handleImpersonate(userId: string) {
 		const { error } = await authClient.admin.impersonateUser({ userId });
@@ -135,22 +170,19 @@ function UsersAdminPage() {
 		await router.navigate({ to: "/dashboard" });
 	}
 
-	async function handleBanConfirm(reason: string, days: number) {
+	function handleSetRole(userId: string, role: "user" | "admin") {
+		setRoleMutation.mutate({ userId, role });
+	}
+
+	function handleUnban(userId: string) {
+		unbanMutation.mutate(userId);
+	}
+
+	function handleBanConfirm(reason: string, days: number) {
 		if (!banTarget) {
 			return;
 		}
-		const { error } = await authClient.admin.banUser({
-			userId: banTarget.id,
-			banReason: reason,
-			...(days > 0 ? { banExpiresIn: days * 24 * 60 * 60 } : {}),
-		});
-		if (error) {
-			toast.error(error.message ?? "Failed to ban user");
-			return;
-		}
-		toast.success(`${banTarget.email} banned`);
-		setBanTarget(null);
-		await loadUsers();
+		banMutation.mutate({ userId: banTarget.id, reason, days });
 	}
 
 	const columns: ColumnDef<UserRow>[] = [
@@ -291,7 +323,7 @@ function BanDialog({
 }: {
 	user: UserRow | null;
 	onOpenChange: (open: boolean) => void;
-	onConfirm: (reason: string, days: number) => Promise<void>;
+	onConfirm: (reason: string, days: number) => void;
 }) {
 	const [reason, setReason] = useState("");
 	const [durationLabel, setDurationLabel] = useState<string>("7 days");

@@ -1,7 +1,8 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { CheckCircle2, KeyRound, ShieldCheck, X, XCircle } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
 	AlertDialog,
@@ -100,41 +101,53 @@ function ProfileTab({
 }) {
 	const [displayName, setDisplayName] = useState(name);
 	const [imageUrl, setImageUrl] = useState(image);
-	const [pending, setPending] = useState(false);
+	const updateMutation = useMutation({
+		mutationFn: async (input: { name: string; image: string | null }) => {
+			const { error } = await authClient.updateUser({
+				name: input.name,
+				image: input.image,
+			});
+			if (error) {
+				throw new Error(error.message ?? "Failed to update profile");
+			}
+		},
+		onSuccess: () => {
+			toast.success("Profile updated");
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
+	const verifyEmailMutation = useMutation({
+		mutationFn: async () => {
+			const { error } = await authClient.sendVerificationEmail({
+				email,
+				callbackURL: "/account",
+			});
+			if (error) {
+				throw new Error(error.message ?? "Failed to send verification email");
+			}
+		},
+		onSuccess: () => {
+			toast.success("Verification email sent");
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
 	useEffect(() => {
 		setDisplayName(name);
 		setImageUrl(image);
 	}, [name, image]);
 
-	async function handleSave(event: React.FormEvent<HTMLFormElement>) {
+	function handleSave(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setPending(true);
-
-		const { error: updateError } = await authClient.updateUser({
-			name: displayName,
-			image: imageUrl || null,
-		});
-
-		setPending(false);
-
-		if (updateError) {
-			toast.error(updateError.message ?? "Failed to update profile");
-			return;
-		}
-		toast.success("Profile updated");
+		updateMutation.mutate({ name: displayName, image: imageUrl || null });
 	}
 
-	async function handleVerifyEmail() {
-		const { error: verifyError } = await authClient.sendVerificationEmail({
-			email,
-			callbackURL: "/account",
-		});
-		if (verifyError) {
-			toast.error(verifyError.message ?? "Failed to send verification email");
-			return;
-		}
-		toast.success("Verification email sent");
+	function handleVerifyEmail() {
+		verifyEmailMutation.mutate();
 	}
 
 	return (
@@ -165,8 +178,12 @@ function ProfileTab({
 								onChange={(event) => setImageUrl(event.target.value)}
 							/>
 						</div>
-						<Button type="submit" disabled={pending} className="w-fit">
-							{pending ? "Saving..." : "Save changes"}
+						<Button
+							type="submit"
+							disabled={updateMutation.isPending}
+							className="w-fit"
+						>
+							{updateMutation.isPending ? "Saving..." : "Save changes"}
 						</Button>
 					</form>
 				</CardContent>
@@ -196,7 +213,7 @@ function ProfileTab({
 					</div>
 					{!emailVerified ? (
 						<Button variant="outline" onClick={handleVerifyEmail}>
-							Verify email
+							{verifyEmailMutation.isPending ? "Sending..." : "Verify email"}
 						</Button>
 					) : null}
 				</CardContent>
@@ -228,9 +245,33 @@ function ChangePasswordCard() {
 	const [newPassword, setNewPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
 	const [revokeOthers, setRevokeOthers] = useState(false);
-	const [pending, setPending] = useState(false);
+	const changePwdMutation = useMutation({
+		mutationFn: async (input: {
+			currentPassword: string;
+			newPassword: string;
+			revokeOtherSessions: boolean;
+		}) => {
+			const { error } = await authClient.changePassword({
+				currentPassword: input.currentPassword,
+				newPassword: input.newPassword,
+				revokeOtherSessions: input.revokeOtherSessions,
+			});
+			if (error) {
+				throw new Error(error.message ?? "Failed to change password");
+			}
+		},
+		onSuccess: () => {
+			setCurrentPassword("");
+			setNewPassword("");
+			setConfirmPassword("");
+			toast.success("Password changed");
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
-	async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+	function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 
 		if (newPassword !== confirmPassword) {
@@ -238,22 +279,11 @@ function ChangePasswordCard() {
 			return;
 		}
 
-		setPending(true);
-		const { error: changeError } = await authClient.changePassword({
+		changePwdMutation.mutate({
 			currentPassword,
 			newPassword,
 			revokeOtherSessions: revokeOthers,
 		});
-		setPending(false);
-
-		if (changeError) {
-			toast.error(changeError.message ?? "Failed to change password");
-			return;
-		}
-		setCurrentPassword("");
-		setNewPassword("");
-		setConfirmPassword("");
-		toast.success("Password changed");
 	}
 
 	return (
@@ -310,8 +340,12 @@ function ChangePasswordCard() {
 							Sign out of all other sessions
 						</Label>
 					</div>
-					<Button type="submit" disabled={pending} className="w-fit">
-						{pending ? "Updating..." : "Update password"}
+					<Button
+						type="submit"
+						disabled={changePwdMutation.isPending}
+						className="w-fit"
+					>
+						{changePwdMutation.isPending ? "Updating..." : "Update password"}
 					</Button>
 				</form>
 			</CardContent>
@@ -649,37 +683,53 @@ function TwoFactorCard({
 }
 
 function SessionsTab({ currentToken }: { currentToken: string }) {
-	const [sessions, setSessions] = useState<SessionRow[]>([]);
-	const [loading, setLoading] = useState(true);
+	const queryClient = useQueryClient();
+	const sessionsQuery = useQuery({
+		queryKey: ["account", "sessions"],
+		queryFn: async () => {
+			const { data, error } = await authClient.listSessions();
+			if (error) {
+				throw new Error(error.message ?? "Failed to load sessions");
+			}
+			return data;
+		},
+	});
+	const sessions = (sessionsQuery.data ?? []) as SessionRow[];
+	const invalidateSessions = () =>
+		queryClient.invalidateQueries({ queryKey: ["account", "sessions"] });
 
-	const loadSessions = useCallback(async () => {
-		setLoading(true);
-		const { data, error: listError } = await authClient.listSessions();
-		if (listError) {
-			toast.error(listError.message ?? "Failed to load sessions");
-		} else {
-			setSessions(data ?? []);
-		}
-		setLoading(false);
-	}, []);
+	const revokeMutation = useMutation({
+		mutationFn: async (token: string) => {
+			await authClient.revokeSession({ token });
+		},
+		onSuccess: () => invalidateSessions(),
+		onError: () => toast.error("Failed to revoke session"),
+	});
+	const revokeOthersMutation = useMutation({
+		mutationFn: async () => {
+			await authClient.revokeOtherSessions();
+		},
+		onSuccess: () => invalidateSessions(),
+		onError: () => toast.error("Failed to revoke sessions"),
+	});
+	const revokeAllMutation = useMutation({
+		mutationFn: async () => {
+			await authClient.revokeSessions();
+		},
+		onSuccess: () => invalidateSessions(),
+		onError: () => toast.error("Failed to revoke sessions"),
+	});
 
-	useEffect(() => {
-		loadSessions();
-	}, [loadSessions]);
-
-	async function handleRevoke(token: string) {
-		await authClient.revokeSession({ token });
-		await loadSessions();
+	function handleRevoke(token: string) {
+		revokeMutation.mutate(token);
 	}
 
-	async function handleRevokeOthers() {
-		await authClient.revokeOtherSessions();
-		await loadSessions();
+	function handleRevokeOthers() {
+		revokeOthersMutation.mutate();
 	}
 
-	async function handleRevokeAll() {
-		await authClient.revokeSessions();
-		await loadSessions();
+	function handleRevokeAll() {
+		revokeAllMutation.mutate();
 	}
 
 	return (
@@ -728,7 +778,7 @@ function SessionsTab({ currentToken }: { currentToken: string }) {
 						</TableRow>
 					</TableHeader>
 					<TableBody>
-						{loading ? (
+						{sessionsQuery.isPending ? (
 							<TableRow>
 								<TableCell colSpan={5}>Loading...</TableCell>
 							</TableRow>

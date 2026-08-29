@@ -1,6 +1,7 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { ArrowDownRight, ArrowUpRight, Wallet } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -71,28 +72,23 @@ type LedgerRow = {
 };
 
 function BillingPage() {
-	const [overview, setOverview] = useState<{
-		name: string;
-		state: SubscriptionState;
-		ledger: LedgerRow[];
-	} | null>(null);
-	const [loading, setLoading] = useState(true);
+	const queryClient = useQueryClient();
+	const overviewQuery = useQuery({
+		queryKey: ["billing", "overview"],
+		queryFn: getBillingOverview,
+	});
 
-	const loadOverview = useCallback(async () => {
-		setLoading(true);
-		const data = await getBillingOverview();
-		setOverview({ ...data, ledger: data.ledger as LedgerRow[] });
-		setLoading(false);
-	}, []);
-
-	useEffect(() => {
-		loadOverview();
-	}, [loadOverview]);
-
-	if (loading || !overview) {
+	if (overviewQuery.isError) {
+		return <p className="text-sm text-destructive">Failed to load billing.</p>;
+	}
+	if (overviewQuery.isPending || !overviewQuery.data) {
 		return <p className="text-sm text-muted-foreground">Loading billing…</p>;
 	}
 
+	const overview = {
+		...overviewQuery.data,
+		ledger: overviewQuery.data.ledger as LedgerRow[],
+	};
 	const { state, ledger } = overview;
 
 	return (
@@ -151,7 +147,9 @@ function BillingPage() {
 							key={planId}
 							planId={planId}
 							state={state}
-							onDone={loadOverview}
+							onDone={() =>
+								queryClient.invalidateQueries({ queryKey: ["billing"] })
+							}
 						/>
 					))}
 				</CardContent>
@@ -244,8 +242,9 @@ function PlanCard({
 }: {
 	planId: PlanId;
 	state: SubscriptionState;
-	onDone: () => Promise<void>;
+	onDone: () => void;
 }) {
+	const queryClient = useQueryClient();
 	const plan = PLANS[planId];
 	const isCurrent = state.plan === planId;
 	const isPending = state.pendingPlan === planId;
@@ -254,26 +253,35 @@ function PlanCard({
 		state.paidUntil !== null &&
 		state.paidUntil.getTime() > Date.now();
 	const [months, setMonths] = useState<number>(1);
-	const [pending, setPending] = useState(false);
+	const subscribeMutation = useMutation({
+		mutationFn: async (input: { planId: PlanId; months: number }) => {
+			const result = await subscribePlan({ data: input });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: (result) => {
+			if (result.scheduled) {
+				toast.success(`${plan.name} scheduled — takes effect at next renewal`);
+			} else {
+				toast.success(
+					`${plan.name} active for ${months} month${months > 1 ? "s" : ""}`,
+				);
+			}
+			queryClient.invalidateQueries({ queryKey: ["billing"] });
+			onDone();
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
-	async function handleSubscribe() {
-		setPending(true);
-		const result = await subscribePlan({ data: { planId, months } });
-		setPending(false);
-
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		if (result.scheduled) {
-			toast.success(`${plan.name} scheduled — takes effect at next renewal`);
-		} else {
-			toast.success(
-				`${plan.name} active for ${months} month${months > 1 ? "s" : ""}`,
-			);
-		}
-		await onDone();
+	function handleSubscribe() {
+		subscribeMutation.mutate({ planId, months });
 	}
+
+	const pending = subscribeMutation.isPending;
 
 	const buttonLabel = (() => {
 		if (pending) {

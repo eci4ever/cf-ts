@@ -1,3 +1,4 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
 	type ColumnDef,
@@ -6,7 +7,7 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { Banknote, Eye } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { DataTable, SortableHeader } from "#/components/data-table/data-table";
 import { Badge } from "#/components/ui/badge";
@@ -79,43 +80,48 @@ type LedgerRow = {
 };
 
 function OrganizationsAdminPage() {
-	const [orgs, setOrgs] = useState<OrgBillingRow[]>([]);
-	const [loading, setLoading] = useState(true);
+	const queryClient = useQueryClient();
 	const [topUpOrg, setTopUpOrg] = useState<OrgBillingRow | null>(null);
 	const [ledgerOrg, setLedgerOrg] = useState<OrgBillingRow | null>(null);
 	const [sorting, setSorting] = useState([{ id: "name", desc: false }]);
-
-	const loadOrgs = useCallback(async () => {
-		setLoading(true);
-		try {
+	const orgsQuery = useQuery({
+		queryKey: ["admin", "orgs"],
+		queryFn: async () => {
 			const rows = await listOrgBilling();
-			setOrgs(rows as OrgBillingRow[]);
-		} catch {
-			toast.error("Failed to load organization billing");
-		}
-		setLoading(false);
-	}, []);
+			return rows as OrgBillingRow[];
+		},
+	});
+	const orgs = orgsQuery.data ?? [];
+	const loading = orgsQuery.isPending;
+	const adjustMutation = useMutation({
+		mutationFn: async (input: {
+			organizationId: string;
+			amountSen: number;
+			type: "topup" | "adjustment";
+			note: string;
+		}) => {
+			const result = await adminAdjustCredit({ data: input });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: (result) => {
+			toast.success(`Balance updated to ${formatRm(result.balanceSen)}`);
+			queryClient.invalidateQueries({ queryKey: ["admin", "orgs"] });
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
-	useEffect(() => {
-		loadOrgs();
-	}, [loadOrgs]);
-
-	async function handleTopUp(
+	function handleTopUp(
 		organizationId: string,
 		amountSen: number,
 		type: "topup" | "adjustment",
 		note: string,
 	) {
-		const result = await adminAdjustCredit({
-			data: { organizationId, amountSen, type, note },
-		});
-		if (!result.ok) {
-			toast.error(result.reason);
-			return false;
-		}
-		toast.success(`Balance updated to ${formatRm(result.balanceSen)}`);
-		await loadOrgs();
-		return true;
+		adjustMutation.mutate({ organizationId, amountSen, type, note });
 	}
 
 	const columns: ColumnDef<OrgBillingRow>[] = [
@@ -256,14 +262,13 @@ function OrgTopUpDialog({
 		amountSen: number,
 		type: "topup" | "adjustment",
 		note: string,
-	) => Promise<boolean>;
+	) => void;
 }) {
 	const [amount, setAmount] = useState("");
 	const [type, setType] = useState<"topup" | "adjustment">("topup");
 	const [note, setNote] = useState("");
-	const [pending, setPending] = useState(false);
 
-	async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+	function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		if (!org) {
 			return;
@@ -277,14 +282,10 @@ function OrgTopUpDialog({
 			toast.error("Top up amount must be positive — use adjustment to deduct");
 			return;
 		}
-		setPending(true);
-		const ok = await onSubmit(org.id, amountSen, type, note);
-		setPending(false);
-		if (ok) {
-			setAmount("");
-			setNote("");
-			onOpenChange(false);
-		}
+		onSubmit(org.id, amountSen, type, note);
+		setAmount("");
+		setNote("");
+		onOpenChange(false);
 	}
 
 	return (
@@ -346,9 +347,7 @@ function OrgTopUpDialog({
 						/>
 					</div>
 					<DialogFooter>
-						<Button type="submit" disabled={pending}>
-							{pending ? "Saving..." : "Confirm"}
-						</Button>
+						<Button type="submit">Confirm</Button>
 					</DialogFooter>
 				</form>
 			</DialogContent>
@@ -363,19 +362,19 @@ function LedgerSheet({
 	org: OrgBillingRow | null;
 	onOpenChange: (open: boolean) => void;
 }) {
-	const [ledger, setLedger] = useState<LedgerRow[]>([]);
-	const [loading, setLoading] = useState(false);
-
-	useEffect(() => {
-		if (!org) {
-			return;
-		}
-		setLoading(true);
-		listOrgLedger({ data: { organizationId: org.id } })
-			.then((rows) => setLedger(rows as LedgerRow[]))
-			.catch(() => toast.error("Failed to load ledger"))
-			.finally(() => setLoading(false));
-	}, [org]);
+	const ledgerQuery = useQuery({
+		queryKey: ["admin", "ledger", org?.id],
+		queryFn: async () => {
+			if (!org) {
+				return [] as LedgerRow[];
+			}
+			const rows = await listOrgLedger({ data: { organizationId: org.id } });
+			return rows as LedgerRow[];
+		},
+		enabled: org !== null,
+	});
+	const ledger = (ledgerQuery.data ?? []) as LedgerRow[];
+	const loading = ledgerQuery.isPending;
 
 	const columns: ColumnDef<LedgerRow>[] = [
 		{

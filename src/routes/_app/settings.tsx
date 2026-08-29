@@ -1,6 +1,7 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { AlertTriangle, Crown, Settings as SettingsIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
 	AlertDialog,
@@ -75,50 +76,57 @@ type MemberRow = {
 
 function SettingsPage() {
 	const router = useRouter();
-	const [settings, setSettings] = useState<{
-		name: string;
-		slug: string;
-		schedule: ScheduleData;
-		role: string;
-		currentUserId: string;
-		members: MemberRow[];
-	} | null>(null);
-	const [loading, setLoading] = useState(true);
+	const queryClient = useQueryClient();
+	const settingsQuery = useQuery({
+		queryKey: ["org", "settings"],
+		queryFn: getOrgSettings,
+	});
 
-	const loadSettings = useCallback(async () => {
-		setLoading(true);
-		const data = await getOrgSettings();
-		setSettings(data);
-		setLoading(false);
-	}, []);
-
-	useEffect(() => {
-		loadSettings();
-	}, [loadSettings]);
-
-	if (loading || !settings) {
+	if (settingsQuery.isError) {
+		return (
+			<Card>
+				<CardHeader>
+					<CardTitle>Something went wrong</CardTitle>
+					<CardDescription>
+						Could not load organization settings.
+					</CardDescription>
+				</CardHeader>
+				<CardContent>
+					<Button
+						variant="outline"
+						onClick={() => queryClient.invalidateQueries({ queryKey: ["org"] })}
+					>
+						Try again
+					</Button>
+				</CardContent>
+			</Card>
+		);
+	}
+	if (settingsQuery.isPending || !settingsQuery.data) {
 		return <p className="text-sm text-muted-foreground">Loading settings…</p>;
 	}
-
-	const isOwner = settings.role === "owner";
+	const settings = settingsQuery.data;
 
 	return (
 		<div className="flex flex-col gap-4">
 			<GeneralCard
 				name={settings.name}
 				slug={settings.slug}
-				onSaved={loadSettings}
+				onSaved={() => queryClient.invalidateQueries({ queryKey: ["org"] })}
 			/>
-			<ScheduleCard schedule={settings.schedule} onSaved={loadSettings} />
+			<ScheduleCard
+				schedule={settings.schedule}
+				onSaved={() => queryClient.invalidateQueries({ queryKey: ["org"] })}
+			/>
 			<LeaveTypesCard />
-			{isOwner ? (
+			{isOwner(settings.role) ? (
 				<>
 					<TransferOwnershipCard
 						currentUserId={settings.currentUserId}
 						members={settings.members}
 						onDone={async () => {
 							await router.invalidate();
-							await loadSettings();
+							queryClient.invalidateQueries({ queryKey: ["org"] });
 						}}
 					/>
 					<DangerZoneCard
@@ -148,6 +156,10 @@ function SettingsPage() {
 	);
 }
 
+function isOwner(role: string): boolean {
+	return role === "owner";
+}
+
 type ScheduleData = {
 	workDays: number[];
 	workStartMinutes: number;
@@ -163,8 +175,9 @@ function ScheduleCard({
 	onSaved,
 }: {
 	schedule: ScheduleData;
-	onSaved: () => Promise<void>;
+	onSaved: () => void;
 }) {
+	const queryClient = useQueryClient();
 	const [days, setDays] = useState<number[]>(schedule.workDays);
 	const [startTime, setStartTime] = useState(
 		`${String(Math.floor(schedule.workStartMinutes / 60)).padStart(2, "0")}:${String(schedule.workStartMinutes % 60).padStart(2, "0")}`,
@@ -174,7 +187,29 @@ function ScheduleCard({
 	);
 	const [grace, setGrace] = useState(String(schedule.graceMinutes));
 	const [timezone, setTimezone] = useState(schedule.timezone);
-	const [pending, setPending] = useState(false);
+	const scheduleMutation = useMutation({
+		mutationFn: async (input: {
+			workDays: number[];
+			startTime: string;
+			endTime: string;
+			graceMinutes: number;
+			timezone: string;
+		}) => {
+			const result = await updateSchedule({ data: input });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: () => {
+			toast.success("Work schedule updated");
+			queryClient.invalidateQueries({ queryKey: ["org"] });
+			onSaved();
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
 	function toggleDay(day: number) {
 		setDays((previous) =>
@@ -184,26 +219,15 @@ function ScheduleCard({
 		);
 	}
 
-	async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+	function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setPending(true);
-		const result = await updateSchedule({
-			data: {
-				workDays: days,
-				startTime,
-				endTime,
-				graceMinutes: Number(grace),
-				timezone,
-			},
+		scheduleMutation.mutate({
+			workDays: days,
+			startTime,
+			endTime,
+			graceMinutes: Number(grace),
+			timezone,
 		});
-		setPending(false);
-
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		toast.success("Work schedule updated");
-		await onSaved();
 	}
 
 	const flexiHours = (
@@ -286,8 +310,12 @@ function ScheduleCard({
 							/>
 						</div>
 					</div>
-					<Button type="submit" disabled={pending} className="w-fit">
-						{pending ? "Saving..." : "Save schedule"}
+					<Button
+						type="submit"
+						disabled={scheduleMutation.isPending}
+						className="w-fit"
+					>
+						{scheduleMutation.isPending ? "Saving..." : "Save schedule"}
 					</Button>
 				</form>
 			</CardContent>
@@ -302,27 +330,35 @@ function GeneralCard({
 }: {
 	name: string;
 	slug: string;
-	onSaved: () => Promise<void>;
+	onSaved: () => void;
 }) {
+	const queryClient = useQueryClient();
 	const [value, setValue] = useState(name);
-	const [pending, setPending] = useState(false);
+	const nameMutation = useMutation({
+		mutationFn: async (input: { name: string }) => {
+			const result = await updateOrgName({ data: input });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: () => {
+			toast.success("Organization name updated");
+			queryClient.invalidateQueries({ queryKey: ["org"] });
+			onSaved();
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
 	useEffect(() => {
 		setValue(name);
 	}, [name]);
 
-	async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+	function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setPending(true);
-		const result = await updateOrgName({ data: { name: value } });
-		setPending(false);
-
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		toast.success("Organization name updated");
-		await onSaved();
+		nameMutation.mutate({ name: value });
 	}
 
 	return (
@@ -351,8 +387,12 @@ function GeneralCard({
 						<Label>Slug</Label>
 						<p className="text-sm text-muted-foreground">{slug}</p>
 					</div>
-					<Button type="submit" disabled={pending} className="w-fit">
-						{pending ? "Saving..." : "Save changes"}
+					<Button
+						type="submit"
+						disabled={nameMutation.isPending}
+						className="w-fit"
+					>
+						{nameMutation.isPending ? "Saving..." : "Save changes"}
 					</Button>
 				</form>
 			</CardContent>
@@ -370,31 +410,38 @@ function TransferOwnershipCard({
 	onDone: () => Promise<void>;
 }) {
 	const router = useRouter();
+	const queryClient = useQueryClient();
 	const [target, setTarget] = useState<string>("");
 	const [confirmOpen, setConfirmOpen] = useState(false);
-	const [pending, setPending] = useState(false);
-
+	const transferMutation = useMutation({
+		mutationFn: async (targetUserId: string) => {
+			const result = await transferOwnership({ data: { targetUserId } });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: async () => {
+			toast.success("Ownership transferred — you are now an admin");
+			setTarget("");
+			setConfirmOpen(false);
+			await router.invalidate();
+			queryClient.invalidateQueries({ queryKey: ["org"] });
+			onDone();
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 	const candidates = members.filter(
 		(member) => member.userId !== currentUserId && member.role !== "owner",
 	);
 
-	async function handleTransfer() {
+	function handleTransfer() {
 		if (!target) {
 			return;
 		}
-		setPending(true);
-		const result = await transferOwnership({ data: { targetUserId: target } });
-		setPending(false);
-		setConfirmOpen(false);
-
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		toast.success("Ownership transferred — you are now an admin");
-		setTarget("");
-		await router.invalidate();
-		await onDone();
+		transferMutation.mutate(target);
 	}
 
 	return (
@@ -447,8 +494,13 @@ function TransferOwnershipCard({
 							<AlertDialogFooter>
 								<AlertDialogCancel>Cancel</AlertDialogCancel>
 								<AlertDialogAction asChild>
-									<Button onClick={handleTransfer} disabled={pending}>
-										{pending ? "Transferring..." : "Transfer"}
+									<Button
+										onClick={handleTransfer}
+										disabled={transferMutation.isPending}
+									>
+										{transferMutation.isPending
+											? "Transferring..."
+											: "Transfer"}
 									</Button>
 								</AlertDialogAction>
 							</AlertDialogFooter>
@@ -474,23 +526,29 @@ function DangerZoneCard({
 }) {
 	const [confirmOpen, setConfirmOpen] = useState(false);
 	const [confirmation, setConfirmation] = useState("");
-	const [pending, setPending] = useState(false);
+	const deleteMutation = useMutation({
+		mutationFn: async () => {
+			const result = await deleteCurrentOrg();
+			if (!result.ok) {
+				throw new Error("Failed to delete organization");
+			}
+			return result;
+		},
+		onSuccess: () => {
+			setConfirmOpen(false);
+			onDeleted();
+		},
+		onError: () => {
+			toast.error("Failed to delete organization");
+		},
+	});
 
-	async function handleDelete() {
+	function handleDelete() {
 		if (confirmation !== orgName) {
 			toast.error(`Type "${orgName}" exactly to confirm deletion`);
 			return;
 		}
-		setPending(true);
-		const result = await deleteCurrentOrg();
-		setPending(false);
-
-		if (!result.ok) {
-			toast.error("Failed to delete organization");
-			return;
-		}
-		setConfirmOpen(false);
-		await onDeleted();
+		deleteMutation.mutate();
 	}
 
 	return (
@@ -539,10 +597,14 @@ function DangerZoneCard({
 							<AlertDialogAction asChild>
 								<Button
 									variant="destructive"
-									disabled={pending || confirmation !== orgName}
+									disabled={
+										deleteMutation.isPending || confirmation !== orgName
+									}
 									onClick={handleDelete}
 								>
-									{pending ? "Deleting..." : "Delete permanently"}
+									{deleteMutation.isPending
+										? "Deleting..."
+										: "Delete permanently"}
 								</Button>
 							</AlertDialogAction>
 						</AlertDialogFooter>
@@ -560,74 +622,92 @@ type LeaveTypeRow = {
 };
 
 function LeaveTypesCard() {
-	const [types, setTypes] = useState<LeaveTypeRow[]>([]);
-	const [loading, setLoading] = useState(true);
+	const queryClient = useQueryClient();
 	const [name, setName] = useState("");
 	const [quota, setQuota] = useState("");
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [editName, setEditName] = useState("");
 	const [editQuota, setEditQuota] = useState("");
-	const [pending, setPending] = useState(false);
+	const typesQuery = useQuery({
+		queryKey: ["leave", "types"],
+		queryFn: listLeaveTypes,
+	});
+	const types = (typesQuery.data ?? []) as LeaveTypeRow[];
+	const createMutation = useMutation({
+		mutationFn: async (input: { name: string; quotaDays: number | null }) => {
+			const result = await createLeaveType({ data: input });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: (_result, variables) => {
+			toast.success(`Leave type "${variables.name}" created`);
+			setName("");
+			setQuota("");
+			queryClient.invalidateQueries({ queryKey: ["leave", "types"] });
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
+	const updateMutation = useMutation({
+		mutationFn: async (input: {
+			leaveTypeId: string;
+			name: string;
+			quotaDays: number | null;
+		}) => {
+			const result = await updateLeaveType({ data: input });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: () => {
+			toast.success("Leave type updated");
+			setEditingId(null);
+			queryClient.invalidateQueries({ queryKey: ["leave", "types"] });
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
+	const deleteMutation = useMutation({
+		mutationFn: async (leaveTypeId: string) => {
+			const result = await deleteLeaveType({ data: { leaveTypeId } });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: () => {
+			toast.success("Leave type deleted");
+			queryClient.invalidateQueries({ queryKey: ["leave", "types"] });
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
-	const load = useCallback(async () => {
-		setLoading(true);
-		const rows = await listLeaveTypes();
-		setTypes(rows as LeaveTypeRow[]);
-		setLoading(false);
-	}, []);
-
-	useEffect(() => {
-		load();
-	}, [load]);
-
-	async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
+	function handleCreate(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setPending(true);
-		const result = await createLeaveType({
-			data: { name, quotaDays: quota ? Number(quota) : null },
-		});
-		setPending(false);
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		toast.success(`Leave type "${name}" created`);
-		setName("");
-		setQuota("");
-		await load();
+		createMutation.mutate({ name, quotaDays: quota ? Number(quota) : null });
 	}
 
-	async function handleUpdate(event: React.FormEvent<HTMLFormElement>) {
+	function handleUpdate(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		if (!editingId) {
 			return;
 		}
-		setPending(true);
-		const result = await updateLeaveType({
-			data: {
-				leaveTypeId: editingId,
-				name: editName,
-				quotaDays: editQuota ? Number(editQuota) : null,
-			},
+		updateMutation.mutate({
+			leaveTypeId: editingId,
+			name: editName,
+			quotaDays: editQuota ? Number(editQuota) : null,
 		});
-		setPending(false);
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		toast.success("Leave type updated");
-		setEditingId(null);
-		await load();
 	}
 
-	async function handleDelete(leaveTypeId: string) {
-		const result = await deleteLeaveType({ data: { leaveTypeId } });
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		toast.success("Leave type deleted");
-		await load();
+	function handleDelete(leaveTypeId: string) {
+		deleteMutation.mutate(leaveTypeId);
 	}
 
 	return (
@@ -643,7 +723,7 @@ function LeaveTypesCard() {
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="flex flex-col gap-4">
-				{loading ? (
+				{typesQuery.isPending ? (
 					<p className="text-sm text-muted-foreground">Loading…</p>
 				) : (
 					<div className="flex flex-col gap-2">
@@ -666,7 +746,11 @@ function LeaveTypesCard() {
 										placeholder="Days (empty = unlimited)"
 										className="w-56"
 									/>
-									<Button type="submit" size="sm" disabled={pending}>
+									<Button
+										type="submit"
+										size="sm"
+										disabled={createMutation.isPending}
+									>
 										Save
 									</Button>
 									<Button
@@ -741,8 +825,8 @@ function LeaveTypesCard() {
 							onChange={(event) => setQuota(event.target.value)}
 						/>
 					</div>
-					<Button type="submit" disabled={pending}>
-						{pending ? "Adding…" : "Add type"}
+					<Button type="submit" disabled={createMutation.isPending}>
+						{createMutation.isPending ? "Adding…" : "Add type"}
 					</Button>
 				</form>
 			</CardContent>

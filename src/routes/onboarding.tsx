@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import {
 	createFileRoute,
 	Link,
@@ -5,7 +6,7 @@ import {
 	useRouter,
 } from "@tanstack/react-router";
 import { Building2, CalendarCheck, Mail } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -47,17 +48,12 @@ function OnboardingPage() {
 	const router = useRouter();
 	const [name, setName] = useState("");
 	const [createPending, setCreatePending] = useState(false);
-	const [invitations, setInvitations] = useState<InvitationRow[]>([]);
 	const [acceptingId, setAcceptingId] = useState<string | null>(null);
-
-	const loadInvitations = useCallback(async () => {
-		const rows = await listMyInvitations();
-		setInvitations(rows as InvitationRow[]);
-	}, []);
-
-	useEffect(() => {
-		loadInvitations();
-	}, [loadInvitations]);
+	const invitationsQuery = useQuery({
+		queryKey: ["invitations", "mine"],
+		queryFn: listMyInvitations,
+	});
+	const invitations = (invitationsQuery.data ?? []) as InvitationRow[];
 
 	async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -115,7 +111,7 @@ function OnboardingPage() {
 			toast.error(error.message ?? "Failed to decline invitation");
 		}
 		setAcceptingId(null);
-		await loadInvitations();
+		await router.invalidate();
 	}
 
 	async function handleSignOut() {

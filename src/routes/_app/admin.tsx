@@ -1,6 +1,5 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import {
 	Card,
 	CardContent,
@@ -32,17 +31,14 @@ type PlatformStats = {
 };
 
 function AdminLayout() {
-	const [stats, setStats] = useState<PlatformStats | null>(null);
-
-	useEffect(() => {
-		getPlatformStats()
-			.then(setStats)
-			.catch(() => toast.error("Failed to load platform stats"));
-	}, []);
+	const statsQuery = useQuery({
+		queryKey: ["admin", "stats"],
+		queryFn: getPlatformStats,
+	});
 
 	return (
 		<div className="flex flex-col gap-4">
-			{stats ? <MetricsRow stats={stats} /> : null}
+			{statsQuery.data ? <MetricsRow stats={statsQuery.data} /> : null}
 			<Outlet />
 		</div>
 	);

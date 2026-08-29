@@ -1,10 +1,11 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	createFileRoute,
 	redirect,
 	useRouteContext,
 } from "@tanstack/react-router";
 import { Check, LogIn, LogOut, PlusSquare, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -55,6 +56,28 @@ import {
 	type Schedule,
 	type Shift,
 } from "#/lib/schedule";
+
+function LoadError({
+	message,
+	onRetry,
+}: {
+	message: string;
+	onRetry: () => void;
+}) {
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Something went wrong</CardTitle>
+				<CardDescription>{message}</CardDescription>
+			</CardHeader>
+			<CardContent>
+				<Button variant="outline" onClick={onRetry}>
+					Try again
+				</Button>
+			</CardContent>
+		</Card>
+	);
+}
 
 export const Route = createFileRoute("/_app/attendance")({
 	staticData: { title: "Attendance" },
@@ -121,28 +144,16 @@ function AttendancePage() {
 }
 
 function MyAttendanceTab() {
-	const [today, setToday] = useState<TodayData | null>(null);
-	const [history, setHistory] = useState<AttendanceRecord[]>([]);
-	const [loading, setLoading] = useState(true);
+	const queryClient = useQueryClient();
 	const [pending, setPending] = useState(false);
-
-	const load = useCallback(async () => {
-		setLoading(true);
-		const [todayData, historyData] = await Promise.all([
-			getTodayAttendance(),
-			listMyAttendance(),
-		]);
-		setToday({
-			...todayData,
-			record: (todayData.record as AttendanceRecord | null) ?? null,
-		});
-		setHistory(historyData as AttendanceRecord[]);
-		setLoading(false);
-	}, []);
-
-	useEffect(() => {
-		load();
-	}, [load]);
+	const todayQuery = useQuery({
+		queryKey: ["attendance", "today"],
+		queryFn: getTodayAttendance,
+	});
+	const historyQuery = useQuery({
+		queryKey: ["attendance", "history"],
+		queryFn: listMyAttendance,
+	});
 
 	async function handleClockIn() {
 		setPending(true);
@@ -157,7 +168,8 @@ function MyAttendanceTab() {
 				? "Clocked in (late)"
 				: "Clocked in",
 		);
-		await load();
+		queryClient.invalidateQueries({ queryKey: ["attendance"] });
+		queryClient.invalidateQueries({ queryKey: ["issues"] });
 	}
 
 	async function handleClockOut() {
@@ -173,12 +185,29 @@ function MyAttendanceTab() {
 				? "Clocked out — note: under target hours"
 				: "Clocked out",
 		);
-		await load();
+		queryClient.invalidateQueries({ queryKey: ["attendance"] });
+		queryClient.invalidateQueries({ queryKey: ["issues"] });
 	}
 
-	if (loading || !today) {
+	if (todayQuery.isError || historyQuery.isError) {
+		return (
+			<LoadError
+				message="Could not load your attendance."
+				onRetry={() => {
+					todayQuery.refetch();
+					historyQuery.refetch();
+				}}
+			/>
+		);
+	}
+	if (todayQuery.isPending || historyQuery.isPending || !todayQuery.data) {
 		return <p className="text-sm text-muted-foreground">Loading…</p>;
 	}
+	const today: TodayData = {
+		...todayQuery.data,
+		record: (todayQuery.data.record as AttendanceRecord | null) ?? null,
+	};
+	const history = historyQuery.data as AttendanceRecord[];
 
 	const record = today.record;
 	const isClockedIn = record !== null && record.clockOut === null;
@@ -340,20 +369,12 @@ type AllAttendanceRow = {
 
 function AllAttendanceTab() {
 	const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-	const [data, setData] = useState<AllAttendanceRow[]>([]);
-	const [loading, setLoading] = useState(true);
 	const [editTarget, setEditTarget] = useState<AllAttendanceRow | null>(null);
-
-	const load = useCallback(async () => {
-		setLoading(true);
-		const result = await adminListAttendance({ data: { date } });
-		setData(result.rows as AllAttendanceRow[]);
-		setLoading(false);
-	}, [date]);
-
-	useEffect(() => {
-		load();
-	}, [load]);
+	const listQuery = useQuery({
+		queryKey: ["attendance", "all", date],
+		queryFn: () => adminListAttendance({ data: { date } }),
+	});
+	const data = (listQuery.data?.rows ?? []) as AllAttendanceRow[];
 
 	return (
 		<div className="flex flex-col gap-4">
@@ -389,7 +410,13 @@ function AllAttendanceTab() {
 							</TableRow>
 						</TableHeader>
 						<TableBody>
-							{loading ? (
+							{listQuery.isError ? (
+								<TableRow>
+									<TableCell colSpan={6} className="text-destructive">
+										Failed to load attendance.
+									</TableCell>
+								</TableRow>
+							) : listQuery.isPending ? (
 								<TableRow>
 									<TableCell colSpan={6}>Loading…</TableCell>
 								</TableRow>
@@ -454,7 +481,7 @@ function AllAttendanceTab() {
 						setEditTarget(null);
 					}
 				}}
-				onSaved={load}
+				onSaved={() => {}}
 			/>
 		</div>
 	);
@@ -469,12 +496,39 @@ function AttendanceEntryDialog({
 	target: AllAttendanceRow | null;
 	date: string;
 	onOpenChange: (open: boolean) => void;
-	onSaved: () => Promise<void>;
+	onSaved: () => void;
 }) {
+	const queryClient = useQueryClient();
 	const [clockInTime, setClockInTime] = useState("09:00");
 	const [clockOutTime, setClockOutTime] = useState("");
 	const [note, setNote] = useState("");
-	const [pending, setPending] = useState(false);
+	const upsertMutation = useMutation({
+		mutationFn: async (input: {
+			employeeId: string;
+			date: string;
+			clockInTime: string;
+			clockOutTime?: string;
+			note: string;
+		}) => {
+			const result = await adminUpsertAttendance({ data: input });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: (result) => {
+			toast.success(
+				result.updated ? "Attendance corrected" : "Attendance recorded",
+			);
+			onOpenChange(false);
+			queryClient.invalidateQueries({ queryKey: ["attendance"] });
+			queryClient.invalidateQueries({ queryKey: ["issues"] });
+			onSaved();
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
 	useEffect(() => {
 		if (!target) {
@@ -500,32 +554,18 @@ function AttendanceEntryDialog({
 		setNote(record?.note ?? "");
 	}, [target]);
 
-	async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+	function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		if (!target) {
 			return;
 		}
-		setPending(true);
-		const result = await adminUpsertAttendance({
-			data: {
-				employeeId: target.employee.id,
-				date,
-				clockInTime,
-				clockOutTime: clockOutTime || undefined,
-				note,
-			},
+		upsertMutation.mutate({
+			employeeId: target.employee.id,
+			date,
+			clockInTime,
+			clockOutTime: clockOutTime || undefined,
+			note,
 		});
-		setPending(false);
-
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		toast.success(
-			result.updated ? "Attendance corrected" : "Attendance recorded",
-		);
-		onOpenChange(false);
-		await onSaved();
 	}
 
 	return (
@@ -570,8 +610,8 @@ function AttendanceEntryDialog({
 						/>
 					</div>
 					<DialogFooter>
-						<Button type="submit" disabled={pending}>
-							{pending ? "Saving..." : "Save attendance"}
+						<Button type="submit" disabled={upsertMutation.isPending}>
+							{upsertMutation.isPending ? "Saving..." : "Save attendance"}
 						</Button>
 					</DialogFooter>
 				</form>
@@ -619,36 +659,40 @@ function IssuesTab({ canReview }: { canReview: boolean }) {
 }
 
 function IssueReviewCard() {
-	const [issues, setIssues] = useState<IssueRow[]>([]);
-	const [loading, setLoading] = useState(true);
+	const queryClient = useQueryClient();
+	const reviewQuery = useQuery({
+		queryKey: ["issues", "review"],
+		queryFn: listIssuesForReview,
+	});
+	const verifyMutation = useMutation({
+		mutationFn: async (input: {
+			issueId: string;
+			decision: "verified" | "rejected";
+		}) => {
+			const result = await verifyIssue({ data: input });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: (_result, variables) => {
+			toast.success(
+				variables.decision === "verified"
+					? "Justification verified"
+					: "Justification rejected",
+			);
+			queryClient.invalidateQueries({ queryKey: ["issues"] });
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
-	const load = useCallback(async () => {
-		setLoading(true);
-		const result = await listIssuesForReview();
-		setIssues(result.issues as IssueRow[]);
-		setLoading(false);
-	}, []);
-
-	useEffect(() => {
-		load();
-	}, [load]);
-
-	async function handleVerify(
-		issueId: string,
-		decision: "verified" | "rejected",
-	) {
-		const result = await verifyIssue({ data: { issueId, decision } });
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		toast.success(
-			decision === "verified"
-				? "Justification verified"
-				: "Justification rejected",
-		);
-		await load();
+	function handleVerify(issueId: string, decision: "verified" | "rejected") {
+		verifyMutation.mutate({ issueId, decision });
 	}
+
+	const issues = (reviewQuery.data?.issues ?? []) as IssueRow[];
 
 	return (
 		<Card>
@@ -659,7 +703,9 @@ function IssueReviewCard() {
 				</CardDescription>
 			</CardHeader>
 			<CardContent>
-				{loading ? (
+				{reviewQuery.isError ? (
+					<p className="text-sm text-destructive">Failed to load issues.</p>
+				) : reviewQuery.isPending ? (
 					<p className="text-sm text-muted-foreground">Loading…</p>
 				) : issues.length === 0 ? (
 					<p className="text-sm text-muted-foreground">
@@ -727,20 +773,13 @@ function IssueReviewCard() {
 }
 
 function MyIssuesCard() {
-	const [issues, setIssues] = useState<IssueRow[]>([]);
-	const [loading, setLoading] = useState(true);
+	const queryClient = useQueryClient();
 	const [justifying, setJustifying] = useState<IssueRow | null>(null);
-
-	const load = useCallback(async () => {
-		setLoading(true);
-		const rows = await listMyIssues();
-		setIssues(rows as IssueRow[]);
-		setLoading(false);
-	}, []);
-
-	useEffect(() => {
-		load();
-	}, [load]);
+	const myIssuesQuery = useQuery({
+		queryKey: ["issues", "mine"],
+		queryFn: listMyIssues,
+	});
+	const issues = (myIssuesQuery.data ?? []) as IssueRow[];
 
 	return (
 		<Card>
@@ -752,7 +791,9 @@ function MyIssuesCard() {
 				</CardDescription>
 			</CardHeader>
 			<CardContent>
-				{loading ? (
+				{myIssuesQuery.isError ? (
+					<p className="text-sm text-destructive">Failed to load issues.</p>
+				) : myIssuesQuery.isPending ? (
 					<p className="text-sm text-muted-foreground">Loading…</p>
 				) : issues.length === 0 ? (
 					<p className="text-sm text-muted-foreground">
@@ -806,10 +847,10 @@ function MyIssuesCard() {
 						setJustifying(null);
 					}
 				}}
-				onSaved={async () => {
+				onSaved={() => {
 					setJustifying(null);
 					toast.success("Justification submitted for verification");
-					await load();
+					queryClient.invalidateQueries({ queryKey: ["issues"] });
 				}}
 			/>
 		</Card>
@@ -823,10 +864,24 @@ function JustificationDialog({
 }: {
 	issue: IssueRow | null;
 	onOpenChange: (open: boolean) => void;
-	onSaved: () => Promise<void>;
+	onSaved: () => void;
 }) {
 	const [text, setText] = useState("");
-	const [pending, setPending] = useState(false);
+	const submitMutation = useMutation({
+		mutationFn: async (input: { issueId: string; justification: string }) => {
+			const result = await submitJustification({ data: input });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: () => {
+			onSaved();
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
 	useEffect(() => {
 		if (issue) {
@@ -834,22 +889,12 @@ function JustificationDialog({
 		}
 	}, [issue]);
 
-	async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+	function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		if (!issue) {
 			return;
 		}
-		setPending(true);
-		const result = await submitJustification({
-			data: { issueId: issue.id, justification: text },
-		});
-		setPending(false);
-
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		await onSaved();
+		submitMutation.mutate({ issueId: issue.id, justification: text });
 	}
 
 	return (
@@ -872,8 +917,10 @@ function JustificationDialog({
 						minLength={5}
 					/>
 					<DialogFooter>
-						<Button type="submit" disabled={pending}>
-							{pending ? "Submitting…" : "Submit justification"}
+						<Button type="submit" disabled={submitMutation.isPending}>
+							{submitMutation.isPending
+								? "Submitting…"
+								: "Submit justification"}
 						</Button>
 					</DialogFooter>
 				</form>

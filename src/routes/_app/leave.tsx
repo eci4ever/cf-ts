@@ -1,6 +1,7 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { CalendarPlus, Check, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import {
 	AlertDialog,
@@ -122,32 +123,28 @@ function LeavePage() {
 }
 
 function MyLeaveTab() {
-	const [overview, setOverview] = useState<{
-		balances: Balance[];
-		requests: LeaveRequestRow[];
-		canApply: boolean;
-	} | null>(null);
-	const [loading, setLoading] = useState(true);
 	const [applyOpen, setApplyOpen] = useState(false);
+	const overviewQuery = useQuery({
+		queryKey: ["leave", "overview"],
+		queryFn: getLeaveOverview,
+	});
 
-	const load = useCallback(async () => {
-		setLoading(true);
-		const data = await getLeaveOverview();
-		setOverview({
-			balances: data.balances as Balance[],
-			requests: data.requests as LeaveRequestRow[],
-			canApply: data.canApply,
-		});
-		setLoading(false);
-	}, []);
-
-	useEffect(() => {
-		load();
-	}, [load]);
-
-	if (loading || !overview) {
+	if (overviewQuery.isError) {
+		return (
+			<LoadError
+				message="Could not load your leave overview."
+				onRetry={() => overviewQuery.refetch()}
+			/>
+		);
+	}
+	if (overviewQuery.isPending || !overviewQuery.data) {
 		return <p className="text-sm text-muted-foreground">Loading…</p>;
 	}
+	const overview = {
+		balances: overviewQuery.data.balances as Balance[],
+		requests: overviewQuery.data.requests as LeaveRequestRow[],
+		canApply: overviewQuery.data.canApply,
+	};
 
 	return (
 		<div className="flex flex-col gap-4">
@@ -227,7 +224,7 @@ function MyLeaveTab() {
 										</TableCell>
 										<TableCell>
 											{request.status === "pending" ? (
-												<CancelButton requestId={request.id} onDone={load} />
+												<CancelButton requestId={request.id} />
 											) : null}
 										</TableCell>
 									</TableRow>
@@ -246,10 +243,9 @@ function MyLeaveTab() {
 						setApplyOpen(false);
 					}
 				}}
-				onSaved={async () => {
+				onSaved={() => {
 					setApplyOpen(false);
 					toast.success("Leave request submitted");
-					await load();
 				}}
 			/>
 		</div>
@@ -266,28 +262,43 @@ function StatusBadge({ status }: { status: string }) {
 	return <Badge variant={variant}>{status}</Badge>;
 }
 
-function CancelButton({
-	requestId,
-	onDone,
+function LoadError({
+	message,
+	onRetry,
 }: {
-	requestId: string;
-	onDone: () => Promise<void>;
+	message: string;
+	onRetry: () => void;
 }) {
-	const [open, setOpen] = useState(false);
-	const [pending, setPending] = useState(false);
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Something went wrong</CardTitle>
+				<CardDescription>{message}</CardDescription>
+			</CardHeader>
+			<CardContent>
+				<Button variant="outline" onClick={onRetry}>
+					Try again
+				</Button>
+			</CardContent>
+		</Card>
+	);
+}
 
-	async function handleCancel() {
-		setPending(true);
-		const result = await cancelLeave({ data: { requestId } });
-		setPending(false);
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		toast.success("Request cancelled — balance restored");
-		setOpen(false);
-		await onDone();
-	}
+function CancelButton({ requestId }: { requestId: string }) {
+	const [open, setOpen] = useState(false);
+	const queryClient = useQueryClient();
+	const cancelMutation = useMutation({
+		mutationFn: (id: string) => cancelLeave({ data: { requestId: id } }),
+		onSuccess: (result) => {
+			if (!result.ok) {
+				toast.error(result.reason);
+				return;
+			}
+			toast.success("Request cancelled — balance restored");
+			setOpen(false);
+			queryClient.invalidateQueries({ queryKey: ["leave"] });
+		},
+	});
 
 	return (
 		<AlertDialog open={open} onOpenChange={setOpen}>
@@ -308,10 +319,10 @@ function CancelButton({
 					<AlertDialogAction asChild>
 						<Button
 							variant="destructive"
-							onClick={handleCancel}
-							disabled={pending}
+							onClick={() => cancelMutation.mutate(requestId)}
+							disabled={cancelMutation.isPending}
 						>
-							{pending ? "Cancelling…" : "Cancel request"}
+							{cancelMutation.isPending ? "Cancelling…" : "Cancel request"}
 						</Button>
 					</AlertDialogAction>
 				</AlertDialogFooter>
@@ -329,32 +340,45 @@ function ApplyDialog({
 	open: boolean;
 	balances: Balance[];
 	onOpenChange: (open: boolean) => void;
-	onSaved: () => Promise<void>;
+	onSaved: () => void;
 }) {
+	const queryClient = useQueryClient();
 	const [leaveTypeId, setLeaveTypeId] = useState("");
 	const [startDate, setStartDate] = useState("");
 	const [endDate, setEndDate] = useState("");
 	const [reason, setReason] = useState("");
-	const [pending, setPending] = useState(false);
+	const applyMutation = useMutation({
+		mutationFn: async (input: {
+			leaveTypeId: string;
+			startDate: string;
+			endDate: string;
+			reason: string;
+		}) => {
+			const result = await applyLeave({ data: input });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: (result) => {
+			toast.success(
+				`Request submitted — ${result.days} working day(s) reserved`,
+			);
+			setLeaveTypeId("");
+			setStartDate("");
+			setEndDate("");
+			setReason("");
+			queryClient.invalidateQueries({ queryKey: ["leave"] });
+			onSaved();
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
-	async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+	function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setPending(true);
-		const result = await applyLeave({
-			data: { leaveTypeId, startDate, endDate, reason },
-		});
-		setPending(false);
-
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		toast.success(`Request submitted — ${result.days} working day(s) reserved`);
-		setLeaveTypeId("");
-		setStartDate("");
-		setEndDate("");
-		setReason("");
-		await onSaved();
+		applyMutation.mutate({ leaveTypeId, startDate, endDate, reason });
 	}
 
 	return (
@@ -366,7 +390,12 @@ function ApplyDialog({
 						Days are counted as working days in your organization schedule.
 					</DialogDescription>
 				</DialogHeader>
-				<form onSubmit={handleSubmit} className="flex flex-col gap-4">
+				<form
+					onSubmit={(event) => {
+						handleSubmit(event);
+					}}
+					className="flex flex-col gap-4"
+				>
 					<div className="flex flex-col gap-2">
 						<Label htmlFor="apply-type">Leave type</Label>
 						<Select value={leaveTypeId} onValueChange={setLeaveTypeId}>
@@ -419,8 +448,11 @@ function ApplyDialog({
 						/>
 					</div>
 					<DialogFooter>
-						<Button type="submit" disabled={pending || !leaveTypeId}>
-							{pending ? "Submitting…" : "Submit request"}
+						<Button
+							type="submit"
+							disabled={applyMutation.isPending || !leaveTypeId}
+						>
+							{applyMutation.isPending ? "Submitting…" : "Submit request"}
 						</Button>
 					</DialogFooter>
 				</form>
@@ -430,46 +462,56 @@ function ApplyDialog({
 }
 
 function ApprovalsTab() {
-	const [data, setData] = useState<{
-		requests: ApprovalRow[];
-		scope: string;
-	} | null>(null);
-	const [loading, setLoading] = useState(true);
+	const queryClient = useQueryClient();
 	const [rejectTarget, setRejectTarget] = useState<ApprovalRow | null>(null);
+	const approvalsQuery = useQuery({
+		queryKey: ["leave", "approvals"],
+		queryFn: listApprovals,
+	});
+	const decideMutation = useMutation({
+		mutationFn: async (input: {
+			requestId: string;
+			decision: "approved" | "rejected";
+			reason?: string;
+		}) => {
+			const result = await decideLeave({ data: input });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: (_result, variables) => {
+			toast.success(`Request ${variables.decision}`);
+			queryClient.invalidateQueries({ queryKey: ["leave"] });
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
-	const load = useCallback(async () => {
-		setLoading(true);
-		const result = await listApprovals();
-		setData({
-			requests: result.requests as ApprovalRow[],
-			scope: result.scope,
-		});
-		setLoading(false);
-	}, []);
-
-	useEffect(() => {
-		load();
-	}, [load]);
-
-	async function handleDecide(
+	function handleDecide(
 		requestId: string,
 		decision: "approved" | "rejected",
 		reason?: string,
 	) {
-		const result = await decideLeave({
-			data: { requestId, decision, reason },
-		});
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		toast.success(`Request ${decision}`);
-		await load();
+		decideMutation.mutate({ requestId, decision, reason });
 	}
 
-	if (loading || !data) {
+	if (approvalsQuery.isError) {
+		return (
+			<LoadError
+				message="Could not load pending approvals."
+				onRetry={() => approvalsQuery.refetch()}
+			/>
+		);
+	}
+	if (approvalsQuery.isPending || !approvalsQuery.data) {
 		return <p className="text-sm text-muted-foreground">Loading…</p>;
 	}
+	const data = {
+		requests: approvalsQuery.data.requests as ApprovalRow[],
+		scope: approvalsQuery.data.scope,
+	};
 
 	if (data.scope === "none") {
 		return (

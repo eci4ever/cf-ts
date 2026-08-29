@@ -1,3 +1,4 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import {
 	type ColumnDef,
@@ -97,55 +98,69 @@ type EmployeeForm = {
 
 function EmployeesPage() {
 	const router = useRouter();
-	const [employees, setEmployees] = useState<EmployeeRow[]>([]);
-	const [loading, setLoading] = useState(true);
+	const queryClient = useQueryClient();
 	const [sorting, setSorting] = useState([{ id: "employeeNo", desc: false }]);
 	const [formOpen, setFormOpen] = useState(false);
 	const [editing, setEditing] = useState<EmployeeRow | null>(null);
+	const employeesQuery = useQuery({
+		queryKey: ["employees", "list"],
+		queryFn: listEmployees,
+	});
+	const toggleMutation = useMutation({
+		mutationFn: async (input: {
+			employeeId: string;
+			isActive: boolean;
+			name: string;
+		}) => {
+			const result = await setEmployeeActive({
+				data: { employeeId: input.employeeId, isActive: input.isActive },
+			});
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: (_result, variables) => {
+			toast.success(
+				variables.isActive
+					? `${variables.name} deactivated`
+					: `${variables.name} activated`,
+			);
+			queryClient.invalidateQueries({ queryKey: ["employees"] });
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
+	const employees = (employeesQuery.data ?? []) as EmployeeRow[];
 
-	const loadEmployees = useCallback(async () => {
-		setLoading(true);
-		const rows = await listEmployees();
-		setEmployees(rows as EmployeeRow[]);
-		setLoading(false);
-	}, []);
-
-	useEffect(() => {
-		loadEmployees();
-	}, [loadEmployees]);
-
-	function openAdd() {
+	const openAdd = useCallback(() => {
 		setEditing(null);
 		setFormOpen(true);
-	}
+	}, []);
 
-	function openEdit(employee: EmployeeRow) {
+	const openEdit = useCallback((employee: EmployeeRow) => {
 		setEditing(employee);
 		setFormOpen(true);
-	}
+	}, []);
 
-	async function handleSaved() {
+	function handleSaved() {
 		setFormOpen(false);
 		toast.success(editing ? "Employee updated" : "Employee added");
-		await loadEmployees();
-		await router.invalidate();
+		queryClient.invalidateQueries({ queryKey: ["employees"] });
+		router.invalidate();
 	}
 
-	async function handleToggleActive(employee: EmployeeRow) {
-		const result = await setEmployeeActive({
-			data: { employeeId: employee.id, isActive: !employee.isActive },
-		});
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		toast.success(
-			employee.isActive
-				? `${employee.name} deactivated`
-				: `${employee.name} activated`,
-		);
-		await loadEmployees();
-	}
+	const handleToggleActive = useCallback(
+		(employee: EmployeeRow) => {
+			toggleMutation.mutate({
+				employeeId: employee.id,
+				isActive: !employee.isActive,
+				name: employee.name,
+			});
+		},
+		[toggleMutation],
+	);
 
 	const columns = useMemo<ColumnDef<EmployeeRow>[]>(
 		() => [
@@ -227,7 +242,7 @@ function EmployeesPage() {
 			},
 		],
 		// handlers are stable enough for display purposes; form state lives outside
-		[],
+		[openEdit, handleToggleActive],
 	);
 
 	const table = useReactTable({
@@ -253,7 +268,7 @@ function EmployeesPage() {
 				<CardContent>
 					<DataTable
 						table={table}
-						loading={loading}
+						loading={employeesQuery.isPending}
 						columnCount={columns.length}
 						toolbar={
 							<Button size="sm" onClick={openAdd}>
@@ -291,7 +306,7 @@ function EmployeeFormDialog({
 	editing: EmployeeRow | null;
 	employees: EmployeeRow[];
 	onOpenChange: (open: boolean) => void;
-	onSaved: () => Promise<void>;
+	onSaved: () => void;
 }) {
 	const [form, setForm] = useState<EmployeeForm>({
 		name: "",
@@ -305,7 +320,58 @@ function EmployeeFormDialog({
 		{ userId: string; name: string; email: string }[]
 	>([]);
 	const [linkTarget, setLinkTarget] = useState<string>("");
-	const [pending, setPending] = useState(false);
+	const saveMutation = useMutation({
+		mutationFn: async (input: { linkTarget?: string }) => {
+			if (editing) {
+				const result = await updateEmployee({
+					data: {
+						employeeId: editing.id,
+						name: form.name,
+						employeeNo: form.employeeNo,
+						position: form.position,
+						shift: form.shift,
+						joinedAt: form.joinedAt || undefined,
+						supervisorId:
+							form.supervisorId && form.supervisorId !== "none"
+								? form.supervisorId
+								: null,
+					},
+				});
+				if (!result.ok) {
+					throw new Error(result.reason);
+				}
+				if (input.linkTarget) {
+					const linkResult = await linkEmployee({
+						data: { employeeId: editing.id, targetUserId: input.linkTarget },
+					});
+					if (!linkResult.ok) {
+						throw new Error(linkResult.reason);
+					}
+					toast.success("Member linked to employee");
+				}
+				return result;
+			}
+			const result = await createEmployee({
+				data: {
+					name: form.name,
+					employeeNo: form.employeeNo,
+					position: form.position,
+					shift: form.shift,
+					joinedAt: form.joinedAt || undefined,
+				},
+			});
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: () => {
+			onSaved();
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
 	const supervisorOptions = employees.filter(
 		(candidate) =>
@@ -345,53 +411,14 @@ function EmployeeFormDialog({
 			listLinkableMembers()
 				.then(setLinkable)
 				.catch(() => setLinkable([]));
+		} else {
+			setLinkable([]);
 		}
 	}, [open, editing]);
 
-	async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+	function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setPending(true);
-		const result = editing
-			? await updateEmployee({
-					data: {
-						employeeId: editing.id,
-						name: form.name,
-						employeeNo: form.employeeNo,
-						position: form.position,
-						shift: form.shift,
-						joinedAt: form.joinedAt || undefined,
-						supervisorId:
-							form.supervisorId && form.supervisorId !== "none"
-								? form.supervisorId
-								: null,
-					},
-				})
-			: await createEmployee({
-					data: {
-						name: form.name,
-						employeeNo: form.employeeNo,
-						position: form.position,
-						shift: form.shift,
-						joinedAt: form.joinedAt || undefined,
-					},
-				});
-		setPending(false);
-
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
-		}
-		if (editing && linkTarget) {
-			const linkResult = await linkEmployee({
-				data: { employeeId: editing.id, targetUserId: linkTarget },
-			});
-			if (!linkResult.ok) {
-				toast.error(linkResult.reason);
-				return;
-			}
-			toast.success("Member linked to employee");
-		}
-		await onSaved();
+		saveMutation.mutate({ linkTarget: editing ? linkTarget : undefined });
 	}
 
 	return (
@@ -523,8 +550,8 @@ function EmployeeFormDialog({
 						) : null}
 					</div>
 					<DialogFooter>
-						<Button type="submit" disabled={pending}>
-							{pending
+						<Button type="submit" disabled={saveMutation.isPending}>
+							{saveMutation.isPending
 								? "Saving..."
 								: editing
 									? "Save changes"
