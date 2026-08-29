@@ -5,11 +5,8 @@ import {
 	CalendarDays,
 	Check,
 	ClipboardCheck,
-	FileDown,
-	Smartphone,
 	Timer,
 	X,
-	Zap,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import {
@@ -37,7 +34,6 @@ function Home() {
 			<SiteHeader />
 			<main>
 				<Hero />
-				<ValueStrip />
 				<Features />
 				<HowItWorks />
 				<Pricing />
@@ -128,33 +124,6 @@ function Hero() {
 					No credit card required · No hardware · Works on any phone
 				</p>
 			</section>
-		</section>
-	);
-}
-
-const valueProps = [
-	{ icon: Zap, label: "Clock in under 5 seconds" },
-	{ icon: Smartphone, label: "No hardware needed" },
-	{ icon: CalendarCheck, label: "Free for 5 employees" },
-	{ icon: FileDown, label: "Payroll-ready exports" },
-];
-
-function ValueStrip() {
-	return (
-		<section className="border-b">
-			<div className="mx-auto grid w-full max-w-6xl grid-cols-2 gap-x-6 gap-y-10 px-6 py-14 lg:grid-cols-4">
-				{valueProps.map((item) => (
-					<div
-						key={item.label}
-						className="flex flex-col items-center gap-3 text-center"
-					>
-						<span className="flex size-10 items-center justify-center rounded-full bg-gradient-to-br from-primary/15 to-primary/5 text-primary">
-							<item.icon className="size-4.5" />
-						</span>
-						<p className="text-sm font-medium">{item.label}</p>
-					</div>
-				))}
-			</div>
 		</section>
 	);
 }
