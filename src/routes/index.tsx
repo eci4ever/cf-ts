@@ -16,8 +16,15 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/components/ui/card";
+import { getSession } from "#/lib/auth.functions";
 
-export const Route = createFileRoute("/")({ component: Home });
+export const Route = createFileRoute("/")({
+	beforeLoad: async () => {
+		const session = await getSession();
+		return { authenticated: session !== null };
+	},
+	component: Home,
+});
 
 function Home() {
 	return (
@@ -36,6 +43,7 @@ function Home() {
 }
 
 function SiteHeader() {
+	const { authenticated } = Route.useRouteContext();
 	return (
 		<header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
 			<div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6">
@@ -43,7 +51,7 @@ function SiteHeader() {
 					<span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
 						<CalendarCheck className="size-4" />
 					</span>
-					<span className="font-semibold tracking-tight">
+					<span className="hidden font-semibold tracking-tight sm:inline">
 						Attendance Management System
 					</span>
 				</div>
@@ -56,12 +64,20 @@ function SiteHeader() {
 					</a>
 				</nav>
 				<div className="flex items-center gap-2">
-					<Button variant="ghost" asChild>
-						<Link to="/login">Sign in</Link>
-					</Button>
-					<Button asChild>
-						<Link to="/signup">Get started</Link>
-					</Button>
+					{authenticated ? (
+						<Button asChild>
+							<Link to="/dashboard">Dashboard</Link>
+						</Button>
+					) : (
+						<>
+							<Button variant="ghost" asChild>
+								<Link to="/login">Sign in</Link>
+							</Button>
+							<Button asChild>
+								<Link to="/signup">Get started</Link>
+							</Button>
+						</>
+					)}
 				</div>
 			</div>
 		</header>
