@@ -648,7 +648,7 @@ function IssueReviewCard() {
 	const queryClient = useQueryClient();
 	const reviewQuery = useQuery({
 		queryKey: ["issues", "review"],
-		queryFn: listIssuesForReview,
+		queryFn: ({ signal }) => listIssuesForReview({ signal }),
 	});
 	const verifyMutation = useMutation({
 		mutationFn: async (input: {
@@ -763,7 +763,7 @@ function MyIssuesCard() {
 	const [justifying, setJustifying] = useState<IssueRow | null>(null);
 	const myIssuesQuery = useQuery({
 		queryKey: ["issues", "mine"],
-		queryFn: listMyIssues,
+		queryFn: ({ signal }) => listMyIssues({ signal }),
 	});
 	const issues = (myIssuesQuery.data ?? []) as IssueRow[];
 
@@ -778,7 +778,16 @@ function MyIssuesCard() {
 			</CardHeader>
 			<CardContent>
 				{myIssuesQuery.isError ? (
-					<p className="text-sm text-destructive">Failed to load issues.</p>
+					<p className="flex items-center gap-2 text-sm text-destructive">
+						Failed to load issues.
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => myIssuesQuery.refetch()}
+						>
+							Try again
+						</Button>
+					</p>
 				) : myIssuesQuery.isPending ? (
 					<p className="text-sm text-muted-foreground">Loading…</p>
 				) : issues.length === 0 ? (

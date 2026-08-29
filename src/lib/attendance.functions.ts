@@ -559,21 +559,25 @@ async function syncIssues(options: {
 			!existingKeys.has(`${issue.employeeId}:${issue.date}:${issue.type}`),
 	);
 	if (toInsert.length > 0) {
-		await getDb()
-			.insert(attendanceIssue)
-			.values(
-				toInsert.map((issue) => ({
-					id: crypto.randomUUID(),
-					organizationId: issue.organizationId,
-					employeeId: issue.employeeId,
-					date: issue.date,
-					type: issue.type,
-					justification: null,
-					status: "open",
-					createdAt: now,
-					updatedAt: now,
-				})),
-			);
+		const CHUNK_SIZE = 10;
+		for (let index = 0; index < toInsert.length; index += CHUNK_SIZE) {
+			await getDb()
+				.insert(attendanceIssue)
+				.values(
+					toInsert.slice(index, index + CHUNK_SIZE).map((issue) => ({
+						id: crypto.randomUUID(),
+						organizationId: issue.organizationId,
+						employeeId: issue.employeeId,
+						date: issue.date,
+						type: issue.type,
+						justification: null,
+						status: "open",
+						createdAt: now,
+						updatedAt: now,
+					})),
+				)
+				.onConflictDoNothing();
+		}
 	}
 	const stale = existing.filter(
 		(issue) =>
