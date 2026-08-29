@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { CalendarPlus, Check, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -51,7 +51,6 @@ import {
 } from "#/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "#/components/ui/tabs";
 import { Textarea } from "#/components/ui/textarea";
-import { getSession } from "#/lib/auth.functions";
 import {
 	applyLeave,
 	cancelLeave,
@@ -62,15 +61,6 @@ import {
 
 export const Route = createFileRoute("/_app/leave")({
 	staticData: { title: "Leave" },
-	beforeLoad: async () => {
-		const session = await getSession();
-		if (!session) {
-			throw redirect({ to: "/login" });
-		}
-		if (!session.session.activeOrganizationId) {
-			throw redirect({ to: "/onboarding" });
-		}
-	},
 	component: LeavePage,
 });
 

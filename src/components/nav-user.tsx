@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
 	ChevronsUpDown,
@@ -24,17 +25,20 @@ import { authClient } from "#/lib/auth-client";
 
 export function NavUser() {
 	const navigate = useNavigate();
+	const queryClient = useQueryClient();
 	const { isMobile } = useSidebar();
 	const { data } = authClient.useSession();
 	const user = data?.user;
 
 	async function handleSignOut() {
 		await authClient.signOut();
+		queryClient.clear();
 		await navigate({ to: "/login" });
 	}
 
 	async function handleStopImpersonating() {
 		await authClient.admin.stopImpersonating();
+		queryClient.clear();
 		await navigate({ to: "/admin/users" });
 	}
 

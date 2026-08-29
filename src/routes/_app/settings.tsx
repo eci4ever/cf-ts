@@ -32,7 +32,6 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "#/components/ui/select";
-import { getSession } from "#/lib/auth.functions";
 import {
 	createLeaveType,
 	deleteLeaveType,
@@ -51,13 +50,6 @@ import {
 export const Route = createFileRoute("/_app/settings")({
 	staticData: { title: "Settings" },
 	beforeLoad: async () => {
-		const session = await getSession();
-		if (!session) {
-			throw redirect({ to: "/login" });
-		}
-		if (!session.session.activeOrganizationId) {
-			throw redirect({ to: "/onboarding" });
-		}
 		const role = await getMyOrgRole();
 		if (role !== "admin" && role !== "owner") {
 			throw redirect({ to: "/dashboard" });

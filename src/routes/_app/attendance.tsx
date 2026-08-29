@@ -1,9 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-	createFileRoute,
-	redirect,
-	useRouteContext,
-} from "@tanstack/react-router";
+import { createFileRoute, useRouteContext } from "@tanstack/react-router";
 import { Check, LogIn, LogOut, PlusSquare, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -48,7 +44,6 @@ import {
 	submitJustification,
 	verifyIssue,
 } from "#/lib/attendance.functions";
-import { getSession } from "#/lib/auth.functions";
 import {
 	type ClockInStatus,
 	type ClockOutStatus,
@@ -81,15 +76,6 @@ function LoadError({
 
 export const Route = createFileRoute("/_app/attendance")({
 	staticData: { title: "Attendance" },
-	beforeLoad: async () => {
-		const session = await getSession();
-		if (!session) {
-			throw redirect({ to: "/login" });
-		}
-		if (!session.session.activeOrganizationId) {
-			throw redirect({ to: "/onboarding" });
-		}
-	},
 	component: AttendancePage,
 });
 

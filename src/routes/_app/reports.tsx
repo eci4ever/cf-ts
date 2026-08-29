@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { ChevronLeft, ChevronRight, Download, Printer } from "lucide-react";
@@ -13,20 +13,10 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/components/ui/card";
-import { getSession } from "#/lib/auth.functions";
 import { getMonthlyReport } from "#/lib/reports.functions";
 
 export const Route = createFileRoute("/_app/reports")({
 	staticData: { title: "Reports" },
-	beforeLoad: async () => {
-		const session = await getSession();
-		if (!session) {
-			throw redirect({ to: "/login" });
-		}
-		if (!session.session.activeOrganizationId) {
-			throw redirect({ to: "/onboarding" });
-		}
-	},
 	component: ReportsPage,
 });
 

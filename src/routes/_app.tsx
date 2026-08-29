@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import {
 	createFileRoute,
 	Outlet,
@@ -74,6 +75,7 @@ function SubscriptionBanner() {
 
 function ImpersonationBanner() {
 	const router = useRouter();
+	const queryClient = useQueryClient();
 	const { data } = authClient.useSession();
 	if (!data?.session.impersonatedBy) {
 		return null;
@@ -94,6 +96,7 @@ function ImpersonationBanner() {
 				className="ml-auto"
 				onClick={async () => {
 					await authClient.admin.stopImpersonating();
+					queryClient.clear();
 					await router.invalidate();
 					await router.navigate({ to: "/admin/users" });
 				}}

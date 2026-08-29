@@ -28,7 +28,6 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
-import { getSession } from "#/lib/auth.functions";
 import {
 	getBillingOverview,
 	type SubscriptionState,
@@ -47,13 +46,6 @@ import {
 export const Route = createFileRoute("/_app/billing")({
 	staticData: { title: "Billing" },
 	beforeLoad: async () => {
-		const session = await getSession();
-		if (!session) {
-			throw redirect({ to: "/login" });
-		}
-		if (!session.session.activeOrganizationId) {
-			throw redirect({ to: "/onboarding" });
-		}
 		const role = await getMyOrgRole();
 		if (role !== "admin" && role !== "owner") {
 			throw redirect({ to: "/dashboard" });
