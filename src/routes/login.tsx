@@ -115,10 +115,7 @@ function LoginPage() {
 	}
 
 	return (
-		<AuthShell
-			title="Welcome back"
-			description="Sign in to your Attendance Management System account"
-		>
+		<AuthShell title="Welcome back" description="Sign in to your TapMe account">
 			<form onSubmit={handleSubmit} className="flex flex-col gap-4">
 				<div className="flex flex-col gap-2">
 					<Label htmlFor="email">Email</Label>
@@ -154,7 +151,10 @@ function LoginPage() {
 				</Button>
 				<p className="text-center text-sm text-muted-foreground">
 					Don&apos;t have an account?{" "}
-					<Link to="/signup" className="font-medium text-primary hover:underline">
+					<Link
+						to="/signup"
+						className="font-medium text-primary hover:underline"
+					>
 						Sign up
 					</Link>
 				</p>

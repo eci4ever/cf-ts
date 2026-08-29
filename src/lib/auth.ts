@@ -20,7 +20,7 @@ function createAuth() {
 		emailAndPassword: {
 			enabled: true,
 			sendResetPassword: async ({ user, url }) => {
-				const brand = env.EMAIL_BRAND_NAME || "Attendance Management System";
+				const brand = env.EMAIL_BRAND_NAME || "TapMe";
 				await sendEmail({
 					to: user.email,
 					subject: `Reset your password on ${brand}`,
@@ -37,7 +37,7 @@ function createAuth() {
 			sendOnSignUp: true,
 			autoSignInAfterVerification: true,
 			sendVerificationEmail: async ({ user, url }) => {
-				const brand = env.EMAIL_BRAND_NAME || "Attendance Management System";
+				const brand = env.EMAIL_BRAND_NAME || "TapMe";
 				await sendEmail({
 					to: user.email,
 					subject: `Verify your email address on ${brand}`,
@@ -53,7 +53,7 @@ function createAuth() {
 			admin(),
 			organization({
 				sendInvitationEmail: async ({ invitation, organization }) => {
-					const brand = env.EMAIL_BRAND_NAME || "Attendance Management System";
+					const brand = env.EMAIL_BRAND_NAME || "TapMe";
 					await sendEmail({
 						to: invitation.email,
 						subject: `You're invited to join ${organization.name} on ${brand}`,
@@ -68,7 +68,7 @@ function createAuth() {
 				},
 			}),
 			twoFactor({
-				issuer: env.EMAIL_BRAND_NAME || "Attendance Management System",
+				issuer: env.EMAIL_BRAND_NAME || "TapMe",
 			}),
 			tanstackStartCookies(),
 		],

@@ -26,7 +26,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 				content: "width=device-width, initial-scale=1, viewport-fit=cover",
 			},
 			{
-				title: "Attendance Management System",
+				title: "TapMe",
 			},
 		],
 		links: [

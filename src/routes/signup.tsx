@@ -88,9 +88,7 @@ function SignupPage() {
 						onChange={(event) => setPassword(event.target.value)}
 						required
 					/>
-					<p className="text-xs text-muted-foreground">
-						At least 8 characters
-					</p>
+					<p className="text-xs text-muted-foreground">At least 8 characters</p>
 				</div>
 				<Button type="submit" disabled={pending}>
 					{pending ? "Creating account..." : "Create account"}
@@ -100,7 +98,10 @@ function SignupPage() {
 				</p>
 				<p className="text-center text-sm text-muted-foreground">
 					Already have an account?{" "}
-					<Link to="/login" className="font-medium text-primary hover:underline">
+					<Link
+						to="/login"
+						className="font-medium text-primary hover:underline"
+					>
 						Sign in
 					</Link>
 				</p>

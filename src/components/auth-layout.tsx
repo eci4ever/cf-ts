@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { BarChart3, CalendarCheck, CalendarDays, Zap } from "lucide-react";
+import type { ReactNode } from "react";
 
 const highlights = [
 	{ icon: Zap, text: "Clock in from any phone in seconds" },
@@ -36,9 +36,7 @@ export function AuthShell({
 					<span className="flex size-9 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground">
 						<CalendarCheck className="size-5" />
 					</span>
-					<span className="font-semibold tracking-tight">
-						Attendance Management System
-					</span>
+					<span className="font-semibold tracking-tight">TapMe</span>
 				</Link>
 				<div className="relative flex flex-col gap-8">
 					<h2 className="max-w-md text-balance text-3xl font-bold tracking-tight">

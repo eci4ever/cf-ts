@@ -54,9 +54,7 @@ function SiteHeader() {
 					<span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
 						<CalendarCheck className="size-4" />
 					</span>
-					<span className="hidden font-semibold tracking-tight sm:inline">
-						Attendance Management System
-					</span>
+					<span className="font-semibold tracking-tight">TapMe</span>
 				</div>
 				<nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
 					<a href="#features" className="hover:text-foreground">
@@ -585,9 +583,7 @@ function SiteFooter() {
 					<span className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
 						<CalendarCheck className="size-3" />
 					</span>
-					<span className="font-medium text-foreground">
-						Attendance Management System
-					</span>
+					<span className="font-medium text-foreground">TapMe</span>
 				</div>
 				<nav className="flex gap-6">
 					<a href="#features" className="hover:text-foreground">
