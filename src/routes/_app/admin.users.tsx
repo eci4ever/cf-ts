@@ -261,6 +261,7 @@ function UsersAdminPage() {
 					loading={loading}
 					columnCount={columns.length}
 					totalRows={total}
+					stickyColumn
 					toolbar={
 						<DataTableSearchInput
 							value={searchInput}

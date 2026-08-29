@@ -33,9 +33,9 @@ export function MobileNavRail() {
 			data-sidebar="sidebar"
 			data-state="collapsed"
 			data-collapsible="icon"
-			className="group fixed inset-y-0 left-0 z-30 flex w-12 flex-col border-r bg-sidebar text-sidebar-foreground md:hidden"
+			className="group fixed inset-y-0 left-0 z-30 flex w-12 flex-col border-r bg-sidebar pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-sidebar-foreground md:hidden [&_[data-sidebar=menu-button]]:size-10!"
 		>
-			<SidebarHeader className="pt-4">
+			<SidebarHeader className="pt-3">
 				<OrgSwitcher />
 			</SidebarHeader>
 			<SidebarContent className="py-2">

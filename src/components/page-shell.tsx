@@ -41,7 +41,9 @@ export function PageShell({
 						</Breadcrumb>
 					</div>
 				</header>
-				<div className="flex flex-1 flex-col gap-4 p-4 pt-4">{children}</div>
+				<div className="flex flex-1 flex-col gap-4 p-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+					{children}
+				</div>
 			</SidebarInset>
 		</SidebarProvider>
 	);

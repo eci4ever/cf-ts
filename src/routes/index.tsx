@@ -96,7 +96,7 @@ function Hero() {
 				place. Your team clocks in seconds, and you always know who was where,
 				and when.
 			</p>
-			<div className="flex flex-wrap items-center justify-center gap-3">
+			<div className="grid w-full max-w-xs gap-3 sm:flex sm:max-w-none sm:flex-wrap sm:items-center sm:justify-center">
 				<Button size="lg" asChild>
 					<Link to="/signup">Start tracking free</Link>
 				</Button>

@@ -378,7 +378,9 @@ function AllAttendanceTab() {
 					<Table>
 						<TableHeader>
 							<TableRow>
-								<TableHead>Employee</TableHead>
+								<TableHead className="sticky left-0 z-10 bg-card">
+									Employee
+								</TableHead>
 								<TableHead>Shift</TableHead>
 								<TableHead>Clock in</TableHead>
 								<TableHead>Clock out</TableHead>
@@ -398,7 +400,7 @@ function AllAttendanceTab() {
 										className="cursor-pointer"
 										onClick={() => setEditTarget(row)}
 									>
-										<TableCell>
+										<TableCell className="sticky left-0 z-10 bg-card [tr:hover_&]:bg-muted/50">
 											<span className="font-medium">{row.employee.name}</span>
 											<span className="ml-2 text-xs text-muted-foreground">
 												{row.employee.employeeNo}
@@ -667,7 +669,9 @@ function IssueReviewCard() {
 					<Table>
 						<TableHeader>
 							<TableRow>
-								<TableHead>Employee</TableHead>
+								<TableHead className="sticky left-0 z-10 bg-card">
+									Employee
+								</TableHead>
 								<TableHead>Date</TableHead>
 								<TableHead>Issue</TableHead>
 								<TableHead>Justification</TableHead>
@@ -679,7 +683,7 @@ function IssueReviewCard() {
 								.filter((issue) => issue.status === "pending")
 								.map((issue) => (
 									<TableRow key={issue.id}>
-										<TableCell className="font-medium">
+										<TableCell className="sticky left-0 z-10 bg-card [tr:hover_&]:bg-muted/50">
 											{issue.employeeName}
 											<span className="ml-2 text-xs text-muted-foreground">
 												{issue.employeeNo}

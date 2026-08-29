@@ -285,6 +285,7 @@ function ReportsPage() {
 							loading={loading}
 							columnCount={leafCount}
 							hidePagination
+							stickyColumn
 						/>
 					</CardContent>
 				</Card>

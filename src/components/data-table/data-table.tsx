@@ -114,7 +114,11 @@ type DataTableProps<TData> = {
 	toolbar?: ReactNode;
 	totalRows?: number;
 	hidePagination?: boolean;
+	stickyColumn?: boolean;
 };
+
+const stickyHeadClass = "sticky left-0 z-10 bg-card";
+const stickyCellClass = "sticky left-0 z-10 bg-card [tr:hover_&]:bg-muted/50";
 
 export function DataTable<TData>({
 	table,
@@ -123,6 +127,7 @@ export function DataTable<TData>({
 	toolbar,
 	totalRows,
 	hidePagination = false,
+	stickyColumn = false,
 }: DataTableProps<TData>) {
 	return (
 		<div className="flex flex-col gap-4">
@@ -132,8 +137,15 @@ export function DataTable<TData>({
 					<TableHeader>
 						{table.getHeaderGroups().map((headerGroup) => (
 							<TableRow key={headerGroup.id}>
-								{headerGroup.headers.map((header) => (
-									<TableHead key={header.id}>
+								{headerGroup.headers.map((header, headerIndex) => (
+									<TableHead
+										key={header.id}
+										className={
+											stickyColumn && headerIndex === 0
+												? stickyHeadClass
+												: undefined
+										}
+									>
 										{header.isPlaceholder
 											? null
 											: flexRender(
@@ -157,6 +169,11 @@ export function DataTable<TData>({
 											<TableCell
 												// biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders have no stable identity
 												key={columnIndex}
+												className={
+													stickyColumn && columnIndex === 0
+														? stickyCellClass
+														: undefined
+												}
 											>
 												<Skeleton className="h-5 w-full" />
 											</TableCell>
@@ -176,8 +193,15 @@ export function DataTable<TData>({
 						) : (
 							table.getRowModel().rows.map((row) => (
 								<TableRow key={row.id}>
-									{row.getVisibleCells().map((cell) => (
-										<TableCell key={cell.id}>
+									{row.getVisibleCells().map((cell, cellIndex) => (
+										<TableCell
+											key={cell.id}
+											className={
+												stickyColumn && cellIndex === 0
+													? stickyCellClass
+													: undefined
+											}
+										>
 											{flexRender(
 												cell.column.columnDef.cell,
 												cell.getContext(),

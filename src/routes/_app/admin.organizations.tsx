@@ -220,6 +220,7 @@ function OrganizationsAdminPage() {
 					table={table}
 					loading={loading}
 					columnCount={columns.length}
+					stickyColumn
 				/>
 			</CardContent>
 			<OrgTopUpDialog
@@ -447,6 +448,7 @@ function LedgerSheet({
 						loading={loading}
 						columnCount={columns.length}
 						hidePagination
+						stickyColumn
 					/>
 				</div>
 			</SheetContent>
