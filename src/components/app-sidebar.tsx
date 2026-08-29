@@ -48,13 +48,13 @@ const navGroups: NavGroup[] = [
 			{ title: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
 			{ title: "Attendance", to: "/attendance", icon: Timer },
 			{ title: "Leave", to: "/leave", icon: CalendarDays },
+			{ title: "Reports", to: "/reports", icon: BarChart3 },
 		],
 	},
 	{
 		label: "Org Admin",
 		items: [
 			{ title: "Employees", to: "/employees", icon: Users, orgAdminOnly: true },
-			{ title: "Reports", to: "/reports", icon: BarChart3, orgAdminOnly: true },
 			{ title: "Team", to: "/team", icon: UserCog, orgAdminOnly: true },
 			{ title: "Billing", to: "/billing", icon: Wallet, orgAdminOnly: true },
 			{
