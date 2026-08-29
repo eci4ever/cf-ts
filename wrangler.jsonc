@@ -10,6 +10,11 @@
 		"nodejs_compat"
 	],
 	"main": "@tanstack/react-start/server-entry",
+	"custom_domains": [
+		{
+			"hostname": "tapme.nimfi.dev"
+		}
+	],
 	"observability": {
 		"enabled": true
 	},
