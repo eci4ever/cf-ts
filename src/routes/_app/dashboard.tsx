@@ -30,6 +30,7 @@ import {
 } from "#/lib/attendance.functions";
 import { authClient } from "#/lib/auth-client";
 import { getOrgDashboardStats } from "#/lib/dashboard.functions";
+import { getPosition } from "#/lib/geolocation";
 import { getLeaveOverview } from "#/lib/leave.functions";
 import { formatMinutes } from "#/lib/schedule";
 
@@ -185,7 +186,18 @@ function ClockWidget({
 	const queryClient = useQueryClient();
 	const clockMutation = useMutation({
 		mutationFn: async (action: "in" | "out") => {
-			const result = action === "in" ? await clockIn() : await clockOut();
+			const geofence = todayQuery.data?.geofence;
+			let coords: { latitude: number; longitude: number } | undefined;
+			if (geofence?.geofenceEnabled) {
+				if (geofence.blockedReason) {
+					throw new Error(geofence.blockedReason);
+				}
+				coords = await getPosition();
+			}
+			const result =
+				action === "in"
+					? await clockIn({ data: coords })
+					: await clockOut({ data: coords });
 			if (!result.ok) {
 				throw new Error(result.reason);
 			}
@@ -203,13 +215,13 @@ function ClockWidget({
 				);
 			}
 			queryClient.invalidateQueries({ queryKey: ["attendance"] });
+			queryClient.invalidateQueries({ queryKey: ["issues"] });
 			queryClient.invalidateQueries({ queryKey: ["dashboard"] });
 		},
 		onError: (error) => {
 			toast.error(error.message);
 		},
 	});
-
 	if (todayQuery.isError || !todayQuery.data) {
 		return null;
 	}

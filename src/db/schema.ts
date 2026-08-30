@@ -1,6 +1,7 @@
 import {
 	type AnySQLiteColumn,
 	integer,
+	real,
 	sqliteTable,
 	text,
 	uniqueIndex,
@@ -106,6 +107,21 @@ export const organization = sqliteTable("organization", {
 	workEndMinutes: integer("work_end_minutes").notNull().default(1080),
 	graceMinutes: integer("grace_minutes").notNull().default(15),
 	timezone: text("timezone").notNull().default("Asia/Kuala_Lumpur"),
+	geofenceEnabled: integer("geofence_enabled", { mode: "boolean" })
+		.notNull()
+		.default(false),
+	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const workSite = sqliteTable("work_site", {
+	id: text("id").primaryKey(),
+	organizationId: text("organization_id")
+		.notNull()
+		.references(() => organization.id, { onDelete: "cascade" }),
+	name: text("name").notNull(),
+	lat: real("lat"),
+	lng: real("lng"),
+	radiusM: integer("radius_m").notNull().default(100),
 	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
@@ -121,6 +137,9 @@ export const employee = sqliteTable(
 			(): AnySQLiteColumn => employee.id,
 			{ onDelete: "set null" },
 		),
+		siteId: text("site_id").references(() => workSite.id, {
+			onDelete: "set null",
+		}),
 		name: text("name").notNull(),
 		employeeNo: text("employee_no").notNull(),
 		position: text("position"),
@@ -224,6 +243,17 @@ export const attendance = sqliteTable(
 		clockInStatus: text("clock_in_status").notNull(),
 		clockOut: integer("clock_out", { mode: "timestamp" }),
 		clockOutStatus: text("clock_out_status"),
+		siteId: text("site_id").references(() => workSite.id, {
+			onDelete: "set null",
+		}),
+		lat: real("lat"),
+		lng: real("lng"),
+		distanceM: real("distance_m"),
+		locationStatus: text("location_status"),
+		clockOutLat: real("clock_out_lat"),
+		clockOutLng: real("clock_out_lng"),
+		clockOutDistanceM: real("clock_out_distance_m"),
+		clockOutLocationStatus: text("clock_out_location_status"),
 		note: text("note"),
 		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),

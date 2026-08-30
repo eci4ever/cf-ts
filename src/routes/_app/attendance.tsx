@@ -44,6 +44,7 @@ import {
 	submitJustification,
 	verifyIssue,
 } from "#/lib/attendance.functions";
+import { getPosition } from "#/lib/geolocation";
 import {
 	type ClockInStatus,
 	type ClockOutStatus,
@@ -87,6 +88,15 @@ type AttendanceRecord = {
 	clockInStatus: ClockInStatus;
 	clockOut: Date | null;
 	clockOutStatus: ClockOutStatus;
+	siteId: string | null;
+	lat: number | null;
+	lng: number | null;
+	distanceM: number | null;
+	locationStatus: string | null;
+	clockOutLat: number | null;
+	clockOutLng: number | null;
+	clockOutDistanceM: number | null;
+	clockOutLocationStatus: string | null;
 	note: string | null;
 };
 
@@ -143,36 +153,74 @@ function MyAttendanceTab() {
 
 	async function handleClockIn() {
 		setPending(true);
-		const result = await clockIn();
-		setPending(false);
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
+		try {
+			let coords: { latitude: number; longitude: number } | undefined;
+			const geofence = todayQuery.data?.geofence;
+			if (geofence?.geofenceEnabled) {
+				if (geofence.blockedReason) {
+					toast.error(geofence.blockedReason);
+					return;
+				}
+				coords = await getPosition();
+			}
+			const result = await clockIn({ data: coords });
+			if (!result.ok) {
+				toast.error(result.reason);
+				return;
+			}
+			toast.success(
+				result.record.clockInStatus === "late"
+					? "Clocked in (late)"
+					: "Clocked in",
+			);
+			queryClient.invalidateQueries({ queryKey: ["attendance"] });
+			queryClient.invalidateQueries({ queryKey: ["issues"] });
+			queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+		} catch (error) {
+			toast.error(
+				error instanceof Error
+					? error.message
+					: "Location is required to clock in",
+			);
+		} finally {
+			setPending(false);
 		}
-		toast.success(
-			result.record.clockInStatus === "late"
-				? "Clocked in (late)"
-				: "Clocked in",
-		);
-		queryClient.invalidateQueries({ queryKey: ["attendance"] });
-		queryClient.invalidateQueries({ queryKey: ["issues"] });
 	}
 
 	async function handleClockOut() {
 		setPending(true);
-		const result = await clockOut();
-		setPending(false);
-		if (!result.ok) {
-			toast.error(result.reason);
-			return;
+		try {
+			let coords: { latitude: number; longitude: number } | undefined;
+			const geofence = todayQuery.data?.geofence;
+			if (geofence?.geofenceEnabled) {
+				if (geofence.blockedReason) {
+					toast.error(geofence.blockedReason);
+					return;
+				}
+				coords = await getPosition();
+			}
+			const result = await clockOut({ data: coords });
+			if (!result.ok) {
+				toast.error(result.reason);
+				return;
+			}
+			toast.success(
+				result.status === "short"
+					? "Clocked out — note: under target hours"
+					: "Clocked out",
+			);
+			queryClient.invalidateQueries({ queryKey: ["attendance"] });
+			queryClient.invalidateQueries({ queryKey: ["issues"] });
+			queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+		} catch (error) {
+			toast.error(
+				error instanceof Error
+					? error.message
+					: "Location is required to clock out",
+			);
+		} finally {
+			setPending(false);
 		}
-		toast.success(
-			result.status === "short"
-				? "Clocked out — note: under target hours"
-				: "Clocked out",
-		);
-		queryClient.invalidateQueries({ queryKey: ["attendance"] });
-		queryClient.invalidateQueries({ queryKey: ["issues"] });
 	}
 
 	if (todayQuery.isError || historyQuery.isError) {
@@ -286,6 +334,7 @@ function MyAttendanceTab() {
 									<TableHead>Date</TableHead>
 									<TableHead>Clock in</TableHead>
 									<TableHead>Clock out</TableHead>
+									<TableHead>Location</TableHead>
 									<TableHead>Note</TableHead>
 								</TableRow>
 							</TableHeader>
@@ -308,6 +357,9 @@ function MyAttendanceTab() {
 													<ClockOutBadge status={entry.clockOutStatus} />
 												) : null}
 											</span>
+										</TableCell>
+										<TableCell>
+											<LocationCell record={entry} />
 										</TableCell>
 										<TableCell className="max-w-40 truncate text-muted-foreground">
 											{entry.note ?? "—"}
@@ -346,6 +398,50 @@ function ClockOutBadge({ status }: { status: ClockOutStatus }) {
 			{status}
 		</Badge>
 	);
+}
+
+function LocationCell({ record }: { record: AttendanceRecord | null }) {
+	if (!record) {
+		return <span className="text-muted-foreground">—</span>;
+	}
+	const badges = [];
+	if (record.locationStatus) {
+		badges.push(
+			record.locationStatus === "outside" ? (
+				<Badge key="in" variant="destructive">
+					out {record.distanceM !== null ? `${record.distanceM}m` : ""}
+				</Badge>
+			) : record.locationStatus === "manual" ? null : (
+				<Badge key="in" variant="secondary">
+					inside
+				</Badge>
+			),
+		);
+	}
+	if (record.clockOutLocationStatus) {
+		badges.push(
+			record.clockOutLocationStatus === "outside" ? (
+				<Badge key="out" variant="destructive">
+					out{" "}
+					{record.clockOutDistanceM !== null
+						? `${record.clockOutDistanceM}m`
+						: ""}
+				</Badge>
+			) : (
+				<Badge key="out" variant="secondary">
+					inside
+				</Badge>
+			),
+		);
+	}
+	if (badges.length === 0) {
+		return record.clockInStatus === "manual" ? (
+			<span className="text-xs text-muted-foreground">manual</span>
+		) : (
+			<span className="text-muted-foreground">—</span>
+		);
+	}
+	return <span className="flex gap-1">{badges}</span>;
 }
 
 type AllAttendanceRow = {
@@ -391,6 +487,7 @@ function AllAttendanceTab() {
 								<TableHead>Shift</TableHead>
 								<TableHead>Clock in</TableHead>
 								<TableHead>Clock out</TableHead>
+								<TableHead>Location</TableHead>
 								<TableHead>Note</TableHead>
 								<TableHead className="w-12" />
 							</TableRow>
@@ -398,13 +495,13 @@ function AllAttendanceTab() {
 						<TableBody>
 							{listQuery.isError ? (
 								<TableRow>
-									<TableCell colSpan={6} className="text-destructive">
+									<TableCell colSpan={7} className="text-destructive">
 										Failed to load attendance.
 									</TableCell>
 								</TableRow>
 							) : listQuery.isPending ? (
 								<TableRow>
-									<TableCell colSpan={6}>Loading…</TableCell>
+									<TableCell colSpan={7}>Loading…</TableCell>
 								</TableRow>
 							) : (
 								data.map((row) => (
@@ -445,6 +542,9 @@ function AllAttendanceTab() {
 											) : (
 												<span className="text-muted-foreground">—</span>
 											)}
+										</TableCell>
+										<TableCell>
+											<LocationCell record={row.record} />
 										</TableCell>
 										<TableCell className="max-w-40 truncate text-muted-foreground">
 											{row.record?.note ?? "—"}

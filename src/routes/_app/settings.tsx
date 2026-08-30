@@ -33,6 +33,13 @@ import {
 	SelectValue,
 } from "#/components/ui/select";
 import {
+	deleteWorkSite,
+	getGeofenceSettings,
+	saveWorkSite,
+	setGeofenceEnabled,
+} from "#/lib/geofence.functions";
+import { getPosition } from "#/lib/geolocation";
+import {
 	createLeaveType,
 	deleteLeaveType,
 	listLeaveTypes,
@@ -110,6 +117,7 @@ function SettingsPage() {
 				schedule={settings.schedule}
 				onSaved={() => queryClient.invalidateQueries({ queryKey: ["org"] })}
 			/>
+			<GeofenceCard />
 			<LeaveTypesCard />
 			{isOwner(settings.role) ? (
 				<>
@@ -604,6 +612,309 @@ function DangerZoneCard({
 				</AlertDialog>
 			</CardContent>
 		</Card>
+	);
+}
+
+type SiteRow = {
+	id: string;
+	name: string;
+	lat: number | null;
+	lng: number | null;
+	radiusM: number;
+};
+
+function GeofenceCard() {
+	const queryClient = useQueryClient();
+	const settingsQuery = useQuery({
+		queryKey: ["geofence", "settings"],
+		queryFn: getGeofenceSettings,
+	});
+	const invalidate = () =>
+		queryClient.invalidateQueries({ queryKey: ["geofence"] });
+
+	const toggleMutation = useMutation({
+		mutationFn: async (enabled: boolean) => {
+			const result = await setGeofenceEnabled({ data: { enabled } });
+			if (!result.ok) {
+				throw new Error("Failed to update geofence");
+			}
+		},
+		onSuccess: () => invalidate(),
+		onError: (error) => toast.error(error.message),
+	});
+
+	const settings = settingsQuery.data;
+
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Geofence clock-in</CardTitle>
+				<CardDescription>
+					When active, employees must clock in from their assigned work site
+					using their phone location. Outside check-ins are flagged and create
+					attendance issues.
+				</CardDescription>
+			</CardHeader>
+			<CardContent className="flex flex-col gap-4">
+				{settingsQuery.isPending || !settings ? (
+					<p className="text-sm text-muted-foreground">Loading…</p>
+				) : (
+					<>
+						<div className="flex items-center justify-between rounded-lg border p-3">
+							<div>
+								<p className="text-sm font-medium">Geofence active</p>
+								<p className="text-xs text-muted-foreground">
+									When off, clock in works without location checks.
+								</p>
+							</div>
+							<Button
+								variant={settings.geofenceEnabled ? "default" : "outline"}
+								size="sm"
+								disabled={toggleMutation.isPending}
+								onClick={() => toggleMutation.mutate(!settings.geofenceEnabled)}
+							>
+								{settings.geofenceEnabled ? "On" : "Off"}
+							</Button>
+						</div>
+						{settings.geofenceEnabled ? (
+							<div className="flex flex-col gap-3">
+								{settings.sites.map((site) => (
+									<SiteEditor key={site.id} site={site} onSaved={invalidate} />
+								))}
+								<AddSiteForm onSaved={invalidate} />
+							</div>
+						) : null}
+					</>
+				)}
+			</CardContent>
+		</Card>
+	);
+}
+
+function SiteEditor({ site, onSaved }: { site: SiteRow; onSaved: () => void }) {
+	const queryClient = useQueryClient();
+	const [editing, setEditing] = useState(false);
+	const [name, setName] = useState(site.name);
+	const [lat, setLat] = useState(site.lat === null ? "" : String(site.lat));
+	const [lng, setLng] = useState(site.lng === null ? "" : String(site.lng));
+	const [radius, setRadius] = useState(String(site.radiusM));
+	const [locating, setLocating] = useState(false);
+
+	const saveMutation = useMutation({
+		mutationFn: async (input: {
+			name: string;
+			lat: number | null;
+			lng: number | null;
+			radiusM: number;
+		}) => {
+			const result = await saveWorkSite({
+				data: { siteId: site.id, ...input },
+			});
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+		},
+		onSuccess: () => {
+			toast.success("Work site updated");
+			queryClient.invalidateQueries({ queryKey: ["geofence"] });
+			onSaved();
+			setEditing(false);
+		},
+		onError: (error) => toast.error(error.message),
+	});
+	const deleteMutation = useMutation({
+		mutationFn: async () => {
+			const result = await deleteWorkSite({ data: { siteId: site.id } });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+		},
+		onSuccess: () => {
+			toast.success("Work site deleted");
+			queryClient.invalidateQueries({ queryKey: ["geofence"] });
+			onSaved();
+		},
+		onError: (error) => toast.error(error.message),
+	});
+
+	async function useCurrentLocation() {
+		setLocating(true);
+		try {
+			const position = await getPosition();
+			setLat(position.latitude.toFixed(6));
+			setLng(position.longitude.toFixed(6));
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "Failed to get location",
+			);
+		}
+		setLocating(false);
+	}
+
+	if (!editing) {
+		return (
+			<div className="flex items-center justify-between gap-2 rounded-lg border p-3">
+				<div className="min-w-0">
+					<p className="text-sm font-medium">{site.name}</p>
+					<p className="text-xs text-muted-foreground">
+						{site.lat === null || site.lng === null
+							? "Coordinates not set — employees of this site cannot clock in"
+							: `${site.lat.toFixed(5)}, ${site.lng.toFixed(5)} · ${site.radiusM}m`}
+					</p>
+				</div>
+				<Button
+					variant="ghost"
+					size="sm"
+					onClick={() => {
+						setName(site.name);
+						setLat(site.lat === null ? "" : String(site.lat));
+						setLng(site.lng === null ? "" : String(site.lng));
+						setRadius(String(site.radiusM));
+						setEditing(true);
+					}}
+				>
+					Edit
+				</Button>
+			</div>
+		);
+	}
+
+	return (
+		<div className="flex flex-col gap-3 rounded-lg border p-3">
+			<div className="flex flex-wrap items-end gap-2">
+				<div className="flex flex-col gap-1">
+					<Label htmlFor={`site-name-${site.id}`}>Name</Label>
+					<Input
+						id={`site-name-${site.id}`}
+						value={name}
+						onChange={(event) => setName(event.target.value)}
+						className="w-40"
+						required
+					/>
+				</div>
+				<div className="flex flex-col gap-1">
+					<Label htmlFor={`site-lat-${site.id}`}>Latitude</Label>
+					<Input
+						id={`site-lat-${site.id}`}
+						value={lat}
+						onChange={(event) => setLat(event.target.value)}
+						placeholder="3.13900"
+						className="w-32"
+					/>
+				</div>
+				<div className="flex flex-col gap-1">
+					<Label htmlFor={`site-lng-${site.id}`}>Longitude</Label>
+					<Input
+						id={`site-lng-${site.id}`}
+						value={lng}
+						onChange={(event) => setLng(event.target.value)}
+						placeholder="101.68685"
+						className="w-32"
+					/>
+				</div>
+				<div className="flex flex-col gap-1">
+					<Label htmlFor={`site-radius-${site.id}`}>Radius (m)</Label>
+					<Input
+						id={`site-radius-${site.id}`}
+						value={radius}
+						onChange={(event) => setRadius(event.target.value)}
+						className="w-24"
+						required
+					/>
+				</div>
+			</div>
+			<div className="flex flex-wrap gap-2">
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					onClick={useCurrentLocation}
+					disabled={locating}
+				>
+					{locating ? "Locating…" : "Use my current location"}
+				</Button>
+				<Button
+					type="button"
+					size="sm"
+					disabled={saveMutation.isPending}
+					onClick={() =>
+						saveMutation.mutate({
+							name,
+							lat: lat === "" ? null : Number(lat),
+							lng: lng === "" ? null : Number(lng),
+							radiusM: Number(radius),
+						})
+					}
+				>
+					{saveMutation.isPending ? "Saving..." : "Save"}
+				</Button>
+				<Button
+					type="button"
+					variant="ghost"
+					size="sm"
+					onClick={() => setEditing(false)}
+				>
+					Cancel
+				</Button>
+				<Button
+					type="button"
+					variant="ghost"
+					size="sm"
+					className="text-destructive"
+					disabled={deleteMutation.isPending}
+					onClick={() => deleteMutation.mutate()}
+				>
+					Delete
+				</Button>
+			</div>
+		</div>
+	);
+}
+
+function AddSiteForm({ onSaved }: { onSaved: () => void }) {
+	const queryClient = useQueryClient();
+	const [name, setName] = useState("");
+	const addMutation = useMutation({
+		mutationFn: async (siteName: string) => {
+			const result = await saveWorkSite({
+				data: { name: siteName, lat: null, lng: null, radiusM: 100 },
+			});
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+		},
+		onSuccess: () => {
+			toast.success("Site added — set its coordinates next");
+			setName("");
+			queryClient.invalidateQueries({ queryKey: ["geofence"] });
+			onSaved();
+		},
+		onError: (error) => toast.error(error.message),
+	});
+
+	return (
+		<form
+			onSubmit={(event) => {
+				event.preventDefault();
+				addMutation.mutate(name);
+			}}
+			className="flex flex-wrap items-end gap-2 border-t pt-4"
+		>
+			<div className="flex flex-col gap-2">
+				<Label htmlFor="new-site-name">Add work site</Label>
+				<Input
+					id="new-site-name"
+					placeholder="Branch Office"
+					value={name}
+					onChange={(event) => setName(event.target.value)}
+					className="w-56"
+					required
+				/>
+			</div>
+			<Button type="submit" disabled={addMutation.isPending}>
+				{addMutation.isPending ? "Adding…" : "Add site"}
+			</Button>
+		</form>
 	);
 }
 

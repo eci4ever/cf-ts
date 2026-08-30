@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { getDb } from "#/db";
-import { employee, member, organization, user } from "#/db/schema";
+import { employee, member, organization, user, workSite } from "#/db/schema";
 import { getCurrentSession } from "./session";
 import { PLANS, type PlanId } from "./subscription";
 
@@ -29,6 +29,27 @@ async function requireOrgAdmin() {
 		throw new Error("Forbidden");
 	}
 	return { session, orgId };
+}
+
+async function validateSiteId(
+	orgId: string,
+	siteId: string | null | undefined,
+): Promise<{ ok: false; reason: string } | { ok: true }> {
+	if (siteId === undefined) {
+		return { ok: true };
+	}
+	if (siteId === null) {
+		return { ok: true };
+	}
+	const [site] = await getDb()
+		.select({ id: workSite.id })
+		.from(workSite)
+		.where(and(eq(workSite.id, siteId), eq(workSite.organizationId, orgId)))
+		.limit(1);
+	if (!site) {
+		return { ok: false, reason: "Work site not found" };
+	}
+	return { ok: true };
 }
 
 async function getSeatCap(orgId: string): Promise<number | null> {
@@ -58,12 +79,15 @@ export const listEmployees = createServerFn({ method: "GET" }).handler(
 				isActive: employee.isActive,
 				supervisorId: employee.supervisorId,
 				supervisorName: supervisor.name,
+				siteId: employee.siteId,
+				siteName: workSite.name,
 				linkedEmail: user.email,
 				linkedName: user.name,
 			})
 			.from(employee)
 			.leftJoin(user, eq(employee.userId, user.id))
 			.leftJoin(supervisor, eq(employee.supervisorId, supervisor.id))
+			.leftJoin(workSite, eq(employee.siteId, workSite.id))
 			.where(eq(employee.organizationId, orgId))
 			.orderBy(asc(employee.employeeNo));
 	},
@@ -77,11 +101,16 @@ export const createEmployee = createServerFn({ method: "POST" })
 			position?: string;
 			shift: string;
 			joinedAt?: string;
+			siteId?: string | null;
 		}) => input,
 	)
 	.handler(async ({ data }) => {
 		const { orgId } = await requireOrgAdmin();
 		const db = getDb();
+		const siteCheck = await validateSiteId(orgId, data.siteId ?? null);
+		if (!siteCheck.ok) {
+			return { ok: false as const, reason: siteCheck.reason };
+		}
 		const cap = await getSeatCap(orgId);
 		const [{ count }] = await db
 			.select({ count: sql<number>`count(*)` })
@@ -130,6 +159,7 @@ export const createEmployee = createServerFn({ method: "POST" })
 			position: data.position?.trim() || null,
 			shift: data.shift,
 			joinedAt: data.joinedAt ? new Date(data.joinedAt) : null,
+			siteId: data.siteId ?? null,
 			isActive: true,
 			createdAt: new Date(),
 		});
@@ -158,6 +188,7 @@ export const updateEmployee = createServerFn({ method: "POST" })
 			shift?: string;
 			joinedAt?: string;
 			supervisorId?: string | null;
+			siteId?: string | null;
 		}) => input,
 	)
 	.handler(async ({ data }) => {
@@ -167,6 +198,10 @@ export const updateEmployee = createServerFn({ method: "POST" })
 			return { ok: false as const, reason: "Employee not found" };
 		}
 		const db = getDb();
+		const siteCheck = await validateSiteId(orgId, data.siteId);
+		if (!siteCheck.ok) {
+			return { ok: false as const, reason: siteCheck.reason };
+		}
 		if (data.employeeNo !== undefined) {
 			const employeeNo = data.employeeNo.trim();
 			const [existing] = await db
@@ -247,6 +282,7 @@ export const updateEmployee = createServerFn({ method: "POST" })
 				...(data.supervisorId !== undefined
 					? { supervisorId: data.supervisorId }
 					: {}),
+				...(data.siteId !== undefined ? { siteId: data.siteId } : {}),
 			})
 			.where(eq(employee.id, data.employeeId));
 		return { ok: true as const };

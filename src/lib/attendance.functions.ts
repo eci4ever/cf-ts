@@ -8,6 +8,7 @@ import {
 	leaveRequest,
 	member,
 	organization,
+	workSite,
 } from "#/db/schema";
 import { deriveIssues } from "./leave";
 import {
@@ -66,6 +67,7 @@ async function getOrgAndEmployee() {
 			name: employee.name,
 			shift: employee.shift,
 			isActive: employee.isActive,
+			siteId: employee.siteId,
 		})
 		.from(employee)
 		.where(
@@ -108,13 +110,117 @@ async function requireOrgAdminForAttendance() {
 	return { session, orgId };
 }
 
+function haversineMeters(
+	lat1: number,
+	lng1: number,
+	lat2: number,
+	lng2: number,
+): number {
+	const R = 6_371_000;
+	const toRad = (value: number) => (value * Math.PI) / 180;
+	const dLat = toRad(lat2 - lat1);
+	const dLng = toRad(lng2 - lng1);
+	const a =
+		Math.sin(dLat / 2) ** 2 +
+		Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+	return Math.round(2 * R * Math.asin(Math.sqrt(a)));
+}
+
+type GeofenceContext = {
+	geofenceEnabled: boolean;
+	site: {
+		id: string;
+		name: string;
+		lat: number;
+		lng: number;
+		radiusM: number;
+	};
+	blockedReason: string | null;
+};
+
+const EMPTY_SITE: GeofenceContext["site"] = {
+	id: "",
+	name: "",
+	lat: 0,
+	lng: 0,
+	radiusM: 0,
+};
+
+async function resolveGeofenceContext(
+	orgId: string,
+	employeeSiteId: string | null,
+): Promise<GeofenceContext> {
+	const [org] = await getDb()
+		.select({ geofenceEnabled: organization.geofenceEnabled })
+		.from(organization)
+		.where(eq(organization.id, orgId))
+		.limit(1);
+	const geofenceEnabled = org?.geofenceEnabled ?? false;
+	if (!geofenceEnabled) {
+		return { geofenceEnabled: false, site: EMPTY_SITE, blockedReason: null };
+	}
+	if (!employeeSiteId) {
+		return {
+			geofenceEnabled: true,
+			site: EMPTY_SITE,
+			blockedReason:
+				"Admin has not assigned your work location yet — clock in is disabled",
+		};
+	}
+	const [site] = await getDb()
+		.select({
+			id: workSite.id,
+			name: workSite.name,
+			lat: workSite.lat,
+			lng: workSite.lng,
+			radiusM: workSite.radiusM,
+		})
+		.from(workSite)
+		.where(eq(workSite.id, employeeSiteId))
+		.limit(1);
+	if (!site) {
+		return {
+			geofenceEnabled: true,
+			site: EMPTY_SITE,
+			blockedReason:
+				"Admin has not assigned your work location yet — clock in is disabled",
+		};
+	}
+	if (site.lat === null || site.lng === null) {
+		return {
+			geofenceEnabled: true,
+			site: {
+				id: site.id,
+				name: site.name,
+				lat: 0,
+				lng: 0,
+				radiusM: site.radiusM,
+			},
+			blockedReason:
+				"Your work location has not been configured yet — contact your admin",
+		};
+	}
+	return {
+		geofenceEnabled: true,
+		site: {
+			id: site.id,
+			name: site.name,
+			lat: site.lat,
+			lng: site.lng,
+			radiusM: site.radiusM,
+		},
+		blockedReason: null,
+	};
+}
+
 export const getTodayAttendance = createServerFn({ method: "GET" }).handler(
 	async () => {
-		const { schedule, employee: linked } = await getOrgAndEmployee();
+		const { schedule, employee: linked, org } = await getOrgAndEmployee();
 		const now = new Date();
 		const today = formatZonedDate(now, schedule.timezone);
 		let record = null;
 		let targetClockOut: Date | null = null;
+		let geofence: GeofenceContext | null = null;
 		if (linked) {
 			const [row] = await getDb()
 				.select()
@@ -133,6 +239,7 @@ export const getTodayAttendance = createServerFn({ method: "GET" }).handler(
 					);
 				}
 			}
+			geofence = await resolveGeofenceContext(org.id, linked.siteId);
 		}
 		return {
 			schedule,
@@ -142,85 +249,242 @@ export const getTodayAttendance = createServerFn({ method: "GET" }).handler(
 			today,
 			record,
 			targetClockOut,
+			geofence,
 		};
 	},
 );
 
-export const clockIn = createServerFn({ method: "POST" }).handler(async () => {
-	const { org, schedule, employee: linked } = await getOrgAndEmployee();
-	if (!linked) {
-		return {
-			ok: false as const,
-			reason: "Your account is not linked to an active employee record",
-		};
-	}
-	const now = new Date();
-	const today = formatZonedDate(now, schedule.timezone);
-	const [existing] = await getDb()
-		.select({ id: attendance.id })
-		.from(attendance)
-		.where(
-			and(eq(attendance.employeeId, linked.id), eq(attendance.date, today)),
-		)
-		.limit(1);
-	if (existing) {
-		return { ok: false as const, reason: "You have already clocked in today" };
-	}
-	const status = computeClockInStatus(now, schedule, linked.shift as Shift);
-	const [record] = await getDb()
-		.insert(attendance)
-		.values({
-			id: crypto.randomUUID(),
-			organizationId: org.id,
-			employeeId: linked.id,
-			date: today,
-			clockIn: now,
-			clockInStatus: status,
-			clockOut: null,
-			clockOutStatus: null,
-			note: null,
-			createdAt: now,
-			updatedAt: now,
-		})
-		.returning();
-	return { ok: true as const, record };
-});
+export const clockIn = createServerFn({ method: "POST" })
+	.validator(
+		(input: { latitude?: number; longitude?: number } | undefined) => input,
+	)
+	.handler(async ({ data }) => {
+		const { org, schedule, employee: linked } = await getOrgAndEmployee();
+		if (!linked) {
+			return {
+				ok: false as const,
+				reason: "Your account is not linked to an active employee record",
+			};
+		}
+		const now = new Date();
+		const today = formatZonedDate(now, schedule.timezone);
+		const [existing] = await getDb()
+			.select({ id: attendance.id })
+			.from(attendance)
+			.where(
+				and(eq(attendance.employeeId, linked.id), eq(attendance.date, today)),
+			)
+			.limit(1);
+		if (existing) {
+			return {
+				ok: false as const,
+				reason: "You have already clocked in today",
+			};
+		}
 
-export const clockOut = createServerFn({ method: "POST" }).handler(async () => {
-	const { schedule, employee: linked } = await getOrgAndEmployee();
-	if (!linked) {
-		return {
-			ok: false as const,
-			reason: "Your account is not linked to an active employee record",
+		const geofence = await resolveGeofenceContext(org.id, linked.siteId);
+		let location: {
+			siteId: string | null;
+			lat: number | null;
+			lng: number | null;
+			distanceM: number | null;
+			locationStatus: string | null;
+		} = {
+			siteId: null,
+			lat: null,
+			lng: null,
+			distanceM: null,
+			locationStatus: null,
 		};
-	}
-	const now = new Date();
-	const today = formatZonedDate(now, schedule.timezone);
-	const [record] = await getDb()
-		.select()
-		.from(attendance)
-		.where(
-			and(eq(attendance.employeeId, linked.id), eq(attendance.date, today)),
-		)
-		.limit(1);
-	if (!record) {
-		return { ok: false as const, reason: "No clock-in record for today" };
-	}
-	if (record.clockOut) {
-		return { ok: false as const, reason: "You have already clocked out today" };
-	}
-	const target = computeTargetClockOut(
-		record.clockIn,
-		schedule,
-		linked.shift as Shift,
-	);
-	const status = computeClockOutStatus(now, target);
-	await getDb()
-		.update(attendance)
-		.set({ clockOut: now, clockOutStatus: status, updatedAt: now })
-		.where(eq(attendance.id, record.id));
-	return { ok: true as const, status };
-});
+		if (geofence.geofenceEnabled) {
+			if (geofence.blockedReason) {
+				return { ok: false as const, reason: geofence.blockedReason };
+			}
+			const site = geofence.site;
+			const latitude = data?.latitude;
+			const longitude = data?.longitude;
+			if (
+				typeof latitude !== "number" ||
+				typeof longitude !== "number" ||
+				!Number.isFinite(latitude) ||
+				!Number.isFinite(longitude)
+			) {
+				return {
+					ok: false as const,
+					reason:
+						"Location is required to clock in — allow location access in your browser and try again",
+				};
+			}
+			const distance = haversineMeters(latitude, longitude, site.lat, site.lng);
+			location = {
+				siteId: site.id,
+				lat: latitude,
+				lng: longitude,
+				distanceM: distance,
+				locationStatus: distance <= site.radiusM ? "inside" : "outside",
+			};
+		}
+
+		const status = computeClockInStatus(now, schedule, linked.shift as Shift);
+		const [record] = await getDb()
+			.insert(attendance)
+			.values({
+				id: crypto.randomUUID(),
+				organizationId: org.id,
+				employeeId: linked.id,
+				date: today,
+				clockIn: now,
+				clockInStatus: status,
+				clockOut: null,
+				clockOutStatus: null,
+				siteId: location.siteId,
+				lat: location.lat,
+				lng: location.lng,
+				distanceM: location.distanceM,
+				locationStatus: location.locationStatus,
+				note: null,
+				createdAt: now,
+				updatedAt: now,
+			})
+			.returning();
+
+		if (
+			geofence.geofenceEnabled &&
+			location.locationStatus === "outside" &&
+			geofence.site
+		) {
+			await getDb()
+				.insert(attendanceIssue)
+				.values({
+					id: crypto.randomUUID(),
+					organizationId: org.id,
+					employeeId: linked.id,
+					date: today,
+					type: "outside",
+					justification: null,
+					status: "open",
+					createdAt: now,
+					updatedAt: now,
+				})
+				.onConflictDoNothing();
+		}
+
+		return { ok: true as const, record };
+	});
+
+export const clockOut = createServerFn({ method: "POST" })
+	.validator(
+		(input: { latitude?: number; longitude?: number } | undefined) => input,
+	)
+	.handler(async ({ data }) => {
+		const { org, schedule, employee: linked } = await getOrgAndEmployee();
+		if (!linked) {
+			return {
+				ok: false as const,
+				reason: "Your account is not linked to an active employee record",
+			};
+		}
+		const now = new Date();
+		const today = formatZonedDate(now, schedule.timezone);
+		const [record] = await getDb()
+			.select()
+			.from(attendance)
+			.where(
+				and(eq(attendance.employeeId, linked.id), eq(attendance.date, today)),
+			)
+			.limit(1);
+		if (!record) {
+			return { ok: false as const, reason: "No clock-in record for today" };
+		}
+		if (record.clockOut) {
+			return {
+				ok: false as const,
+				reason: "You have already clocked out today",
+			};
+		}
+
+		const geofence = await resolveGeofenceContext(org.id, linked.siteId);
+		let location: {
+			lat: number | null;
+			lng: number | null;
+			distanceM: number | null;
+			locationStatus: string | null;
+		} = {
+			lat: null,
+			lng: null,
+			distanceM: null,
+			locationStatus: null,
+		};
+		if (geofence.geofenceEnabled) {
+			if (geofence.blockedReason) {
+				return { ok: false as const, reason: geofence.blockedReason };
+			}
+			const site = geofence.site;
+			const latitude = data?.latitude;
+			const longitude = data?.longitude;
+			if (
+				typeof latitude !== "number" ||
+				typeof longitude !== "number" ||
+				!Number.isFinite(latitude) ||
+				!Number.isFinite(longitude)
+			) {
+				return {
+					ok: false as const,
+					reason:
+						"Location is required to clock out — allow location access in your browser and try again",
+				};
+			}
+			const distance = haversineMeters(latitude, longitude, site.lat, site.lng);
+			location = {
+				lat: latitude,
+				lng: longitude,
+				distanceM: distance,
+				locationStatus: distance <= site.radiusM ? "inside" : "outside",
+			};
+		}
+
+		const target = computeTargetClockOut(
+			record.clockIn,
+			schedule,
+			linked.shift as Shift,
+		);
+		const status = computeClockOutStatus(now, target);
+		await getDb()
+			.update(attendance)
+			.set({
+				clockOut: now,
+				clockOutStatus: status,
+				clockOutLat: location.lat,
+				clockOutLng: location.lng,
+				clockOutDistanceM: location.distanceM,
+				clockOutLocationStatus: location.locationStatus,
+				updatedAt: now,
+			})
+			.where(eq(attendance.id, record.id));
+
+		if (
+			geofence.geofenceEnabled &&
+			location.locationStatus === "outside" &&
+			geofence.site
+		) {
+			await getDb()
+				.insert(attendanceIssue)
+				.values({
+					id: crypto.randomUUID(),
+					organizationId: org.id,
+					employeeId: linked.id,
+					date: today,
+					type: "outside",
+					justification: null,
+					status: "open",
+					createdAt: now,
+					updatedAt: now,
+				})
+				.onConflictDoNothing();
+		}
+
+		return { ok: true as const, status };
+	});
 
 export const listMyAttendance = createServerFn({ method: "GET" }).handler(
 	async () => {
@@ -582,6 +846,7 @@ async function syncIssues(options: {
 	const stale = existing.filter(
 		(issue) =>
 			issue.status === "open" &&
+			issue.type !== "outside" &&
 			!derivedKeys.has(`${issue.employeeId}:${issue.date}:${issue.type}`),
 	);
 	for (const issue of stale) {

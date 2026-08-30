@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import {
 	type ColumnDef,
 	getCoreRowModel,
@@ -51,6 +51,7 @@ import {
 	setEmployeeActive,
 	updateEmployee,
 } from "#/lib/employees.functions";
+import { getGeofenceSettings } from "#/lib/geofence.functions";
 import { getMyOrgRole } from "#/lib/org.functions";
 
 export const Route = createFileRoute("/_app/employees")({
@@ -74,6 +75,8 @@ type EmployeeRow = {
 	isActive: boolean;
 	supervisorId: string | null;
 	supervisorName: string | null;
+	siteId: string | null;
+	siteName: string | null;
 	linkedEmail: string | null;
 	linkedName: string | null;
 };
@@ -86,10 +89,10 @@ type EmployeeForm = {
 	shift: string;
 	joinedAt: string;
 	supervisorId: string;
+	siteId: string;
 };
 
 function EmployeesPage() {
-	const router = useRouter();
 	const queryClient = useQueryClient();
 	const [sorting, setSorting] = useState([{ id: "employeeNo", desc: false }]);
 	const [formOpen, setFormOpen] = useState(false);
@@ -140,7 +143,6 @@ function EmployeesPage() {
 		setFormOpen(false);
 		toast.success(editing ? "Employee updated" : "Employee added");
 		queryClient.invalidateQueries({ queryKey: ["employees"] });
-		router.invalidate();
 	}
 
 	const handleToggleActive = useCallback(
@@ -179,6 +181,14 @@ function EmployeesPage() {
 				header: "Supervisor",
 				cell: ({ row }) =>
 					row.original.supervisorName ?? (
+						<span className="text-xs text-muted-foreground">—</span>
+					),
+			},
+			{
+				accessorKey: "siteName",
+				header: "Site",
+				cell: ({ row }) =>
+					row.original.siteName ?? (
 						<span className="text-xs text-muted-foreground">—</span>
 					),
 			},
@@ -307,7 +317,14 @@ function EmployeeFormDialog({
 		shift: "normal",
 		joinedAt: "",
 		supervisorId: "",
+		siteId: "",
 	});
+	const sitesQuery = useQuery({
+		queryKey: ["geofence", "settings"],
+		queryFn: getGeofenceSettings,
+		enabled: open,
+	});
+	const sites = sitesQuery.data?.sites ?? [];
 	const [linkable, setLinkable] = useState<
 		{ userId: string; name: string; email: string }[]
 	>([]);
@@ -327,6 +344,7 @@ function EmployeeFormDialog({
 							form.supervisorId && form.supervisorId !== "none"
 								? form.supervisorId
 								: null,
+						siteId: form.siteId && form.siteId !== "none" ? form.siteId : null,
 					},
 				});
 				if (!result.ok) {
@@ -350,6 +368,7 @@ function EmployeeFormDialog({
 					position: form.position,
 					shift: form.shift,
 					joinedAt: form.joinedAt || undefined,
+					siteId: form.siteId && form.siteId !== "none" ? form.siteId : null,
 				},
 			});
 			if (!result.ok) {
@@ -388,6 +407,7 @@ function EmployeeFormDialog({
 							? new Date(editing.joinedAt).toISOString().slice(0, 10)
 							: "",
 						supervisorId: editing.supervisorId ?? "",
+						siteId: editing.siteId ?? "none",
 					}
 				: {
 						name: "",
@@ -396,6 +416,7 @@ function EmployeeFormDialog({
 						shift: "normal",
 						joinedAt: "",
 						supervisorId: "",
+						siteId: "none",
 					},
 		);
 		setLinkTarget("");
@@ -508,6 +529,29 @@ function EmployeeFormDialog({
 											{supervisorOptions.map((candidate) => (
 												<SelectItem key={candidate.id} value={candidate.id}>
 													{candidate.name} ({candidate.employeeNo})
+												</SelectItem>
+											))}
+										</SelectGroup>
+									</SelectContent>
+								</Select>
+							</div>
+						) : null}
+						{editing ? (
+							<div className="flex flex-col gap-2">
+								<Label htmlFor="employee-site">Work location</Label>
+								<Select
+									value={form.siteId}
+									onValueChange={(value) => setForm({ ...form, siteId: value })}
+								>
+									<SelectTrigger id="employee-site" className="w-full">
+										<SelectValue placeholder="None" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectGroup>
+											<SelectItem value="none">— No site —</SelectItem>
+											{sites.map((site) => (
+												<SelectItem key={site.id} value={site.id}>
+													{site.name}
 												</SelectItem>
 											))}
 										</SelectGroup>
