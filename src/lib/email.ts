@@ -27,7 +27,7 @@ export async function sendEmail({
 
 	const resend = new Resend(apiKey);
 	const { data, error } = await resend.emails.send({
-		from: env.EMAIL_FROM || "onboarding@resend.dev",
+		from: env.EMAIL_FROM || "admin@resend.dev",
 		to: [to],
 		subject,
 		html,
