@@ -6,7 +6,7 @@ import {
 	useRouter,
 } from "@tanstack/react-router";
 import { Building2, CalendarCheck, Mail } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -55,6 +55,20 @@ function OnboardingPage() {
 		queryFn: listMyInvitations,
 	});
 	const invitations = (invitationsQuery.data ?? []) as InvitationRow[];
+	const { data: myOrganizations } = authClient.useListOrganizations();
+
+	// Ahli yang dah ada org tidak perlu onboarding — auto-teruskan
+	useEffect(() => {
+		if (myOrganizations && myOrganizations.length > 0) {
+			authClient.organization
+				.setActive({ organizationId: myOrganizations[0].id })
+				.then(async () => {
+					await router.invalidate();
+					await router.navigate({ to: "/dashboard" });
+				})
+				.catch(() => {});
+		}
+	}, [myOrganizations, router]);
 
 	async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();

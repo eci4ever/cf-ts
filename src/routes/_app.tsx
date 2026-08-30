@@ -10,7 +10,7 @@ import { VenetianMask } from "lucide-react";
 import { PageShell } from "#/components/page-shell";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
-import { getSession } from "#/lib/auth.functions";
+import { ensureActiveOrg, getSession } from "#/lib/auth.functions";
 import { authClient } from "#/lib/auth-client";
 import { ensureSubscription } from "#/lib/billing.functions";
 import { getMyOrgRole } from "#/lib/org.functions";
@@ -23,7 +23,10 @@ export const Route = createFileRoute("/_app")({
 			throw redirect({ to: "/login" });
 		}
 		if (!session.session.activeOrganizationId) {
-			throw redirect({ to: "/onboarding" });
+			const { hasOrg } = await ensureActiveOrg();
+			if (!hasOrg) {
+				throw redirect({ to: "/onboarding" });
+			}
 		}
 		const orgRole = await getMyOrgRole();
 		const subscription = await ensureSubscription();

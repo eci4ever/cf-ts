@@ -23,3 +23,26 @@ export const ensureSession = createServerFn({ method: "GET" }).handler(
 		return session;
 	},
 );
+
+export const ensureActiveOrg = createServerFn({ method: "GET" }).handler(
+	async () => {
+		const headers = getRequestHeaders();
+		const auth = getAuth();
+		const session = await auth.api.getSession({ headers });
+		if (!session) {
+			return { hasOrg: false };
+		}
+		if (session.session.activeOrganizationId) {
+			return { hasOrg: true };
+		}
+		const organizations = await auth.api.listOrganizations({ headers });
+		if (!organizations || organizations.length === 0) {
+			return { hasOrg: false };
+		}
+		await auth.api.setActiveOrganization({
+			body: { organizationId: organizations[0].id },
+			headers,
+		});
+		return { hasOrg: true };
+	},
+);
