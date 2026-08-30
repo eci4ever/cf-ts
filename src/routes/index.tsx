@@ -9,6 +9,7 @@ import {
 	X,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { ThemeToggle } from "#/components/theme-toggle";
 import {
 	Accordion,
 	AccordionContent,
@@ -68,6 +69,7 @@ function SiteHeader() {
 					</a>
 				</nav>
 				<div className="flex items-center gap-2">
+					<ThemeToggle />
 					{authenticated ? (
 						<Button asChild>
 							<Link to="/dashboard">Dashboard</Link>

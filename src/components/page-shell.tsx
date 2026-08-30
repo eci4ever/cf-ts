@@ -1,5 +1,6 @@
 import { AppSidebar } from "#/components/app-sidebar";
 import { MobileNavRail } from "#/components/mobile-nav-rail";
+import { ThemeToggle } from "#/components/theme-toggle";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -39,6 +40,9 @@ export function PageShell({
 								</BreadcrumbItem>
 							</BreadcrumbList>
 						</Breadcrumb>
+					</div>
+					<div className="ml-auto px-4">
+						<ThemeToggle />
 					</div>
 				</header>
 				<div className="flex flex-1 flex-col gap-4 p-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
