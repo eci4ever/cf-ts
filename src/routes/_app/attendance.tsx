@@ -3,6 +3,7 @@ import { createFileRoute, useRouteContext } from "@tanstack/react-router";
 import { Check, LogIn, LogOut, PlusSquare, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AttendanceHeatmap } from "#/components/attendance-heatmap";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
@@ -37,6 +38,7 @@ import {
 	adminUpsertAttendance,
 	clockIn,
 	clockOut,
+	getMyAttendanceHeatmap,
 	getTodayAttendance,
 	listIssuesForReview,
 	listMyAttendance,
@@ -149,6 +151,10 @@ function MyAttendanceTab() {
 	const historyQuery = useQuery({
 		queryKey: ["attendance", "history"],
 		queryFn: listMyAttendance,
+	});
+	const heatmapQuery = useQuery({
+		queryKey: ["attendance", "heatmap"],
+		queryFn: getMyAttendanceHeatmap,
 	});
 
 	async function handleClockIn() {
@@ -316,6 +322,20 @@ function MyAttendanceTab() {
 							Clock out
 						</Button>
 					</div>
+				</CardContent>
+			</Card>
+
+			<Card>
+				<CardHeader>
+					<CardTitle>Attendance heatmap</CardTitle>
+					<CardDescription>Your last 12 weeks at a glance</CardDescription>
+				</CardHeader>
+				<CardContent>
+					{heatmapQuery.isPending ? (
+						<p className="text-sm text-muted-foreground">Loading…</p>
+					) : (
+						<AttendanceHeatmap days={heatmapQuery.data?.days ?? []} />
+					)}
 				</CardContent>
 			</Card>
 

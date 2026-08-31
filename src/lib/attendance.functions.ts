@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { getDb } from "#/db";
 import {
 	attendance,
@@ -10,7 +10,7 @@ import {
 	organization,
 	workSite,
 } from "#/db/schema";
-import { deriveIssues } from "./leave";
+import { deriveIssues, enumerateDays } from "./leave";
 import {
 	type ClockInStatus,
 	type ClockOutStatus,
@@ -485,6 +485,110 @@ export const clockOut = createServerFn({ method: "POST" })
 
 		return { ok: true as const, status };
 	});
+
+export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
+	async () => {
+		const { schedule, employee: linked } = await getOrgAndEmployee();
+		if (!linked) {
+			return { days: [], today: "" };
+		}
+		const today = formatZonedDate(new Date(), schedule.timezone);
+		const [year, month, day] = today.split("-").map(Number);
+		const todayUtc = Date.UTC(year, month - 1, day);
+		const DAY_MS = 86_400_000;
+		const WEEKS = 12;
+		const rangeStart = new Date(todayUtc - (WEEKS * 7 - 1) * DAY_MS)
+			.toISOString()
+			.slice(0, 10);
+
+		const records = await getDb()
+			.select({
+				date: attendance.date,
+				clockInStatus: attendance.clockInStatus,
+				clockOutStatus: attendance.clockOutStatus,
+				locationStatus: attendance.locationStatus,
+				clockOutLocationStatus: attendance.clockOutLocationStatus,
+			})
+			.from(attendance)
+			.where(
+				and(
+					eq(attendance.employeeId, linked.id),
+					gte(attendance.date, rangeStart),
+					lte(attendance.date, today),
+				),
+			);
+		const byDate = new Map(records.map((row) => [row.date, row]));
+
+		const issues = await getDb()
+			.select({ date: attendanceIssue.date })
+			.from(attendanceIssue)
+			.where(
+				and(
+					eq(attendanceIssue.employeeId, linked.id),
+					gte(attendanceIssue.date, rangeStart),
+					lte(attendanceIssue.date, today),
+				),
+			);
+		const issueDates = new Set(issues.map((row) => row.date));
+
+		const leaves = await getDb()
+			.select({
+				startDate: leaveRequest.startDate,
+				endDate: leaveRequest.endDate,
+			})
+			.from(leaveRequest)
+			.where(
+				and(
+					eq(leaveRequest.employeeId, linked.id),
+					eq(leaveRequest.status, "approved"),
+					lte(leaveRequest.startDate, today),
+					gte(leaveRequest.endDate, rangeStart),
+				),
+			);
+		const leaveDates = new Set<string>();
+		for (const leave of leaves) {
+			for (const date of enumerateDays(leave.startDate, leave.endDate)) {
+				if (date >= rangeStart && date <= today) {
+					leaveDates.add(date);
+				}
+			}
+		}
+
+		const workDays = schedule.workDays;
+		const days: { date: string; status: string }[] = [];
+		for (
+			let t = todayUtc - (WEEKS * 7 - 1) * DAY_MS;
+			t <= todayUtc;
+			t += DAY_MS
+		) {
+			const date = new Date(t).toISOString().slice(0, 10);
+			const weekday = new Date(t).getUTCDay();
+			if (!workDays.includes(weekday)) {
+				days.push({ date, status: "off" });
+				continue;
+			}
+			if (leaveDates.has(date)) {
+				days.push({ date, status: "leave" });
+				continue;
+			}
+			const record = byDate.get(date);
+			const hasIssue = issueDates.has(date);
+			if (record) {
+				days.push({ date, status: hasIssue ? "issue" : "present" });
+				continue;
+			}
+			if (date === today) {
+				days.push({ date, status: "today" });
+				continue;
+			}
+			days.push({
+				date,
+				status: hasIssue ? "absent" : "empty",
+			});
+		}
+		return { days, today };
+	},
+);
 
 export const listMyAttendance = createServerFn({ method: "GET" }).handler(
 	async () => {
