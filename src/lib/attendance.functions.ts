@@ -8,6 +8,7 @@ import {
 	leaveRequest,
 	member,
 	organization,
+	user,
 	workSite,
 } from "#/db/schema";
 import { deriveIssues, enumerateDays } from "./leave";
@@ -1087,6 +1088,7 @@ export const submitJustification = createServerFn({ method: "POST" })
 			.set({
 				justification,
 				status: "pending",
+				reviewNote: null,
 				verifiedBy: null,
 				verifiedAt: null,
 				updatedAt: new Date(),
@@ -1130,9 +1132,13 @@ export const listIssuesForReview = createServerFn({ method: "GET" }).handler(
 				type: attendanceIssue.type,
 				justification: attendanceIssue.justification,
 				status: attendanceIssue.status,
+				reviewNote: attendanceIssue.reviewNote,
+				reviewerName: user.name,
+				verifiedAt: attendanceIssue.verifiedAt,
 			})
 			.from(attendanceIssue)
 			.innerJoin(employee, eq(attendanceIssue.employeeId, employee.id))
+			.leftJoin(user, eq(attendanceIssue.verifiedBy, user.id))
 			.where(inArray(attendanceIssue.employeeId, employeeIds))
 			.orderBy(desc(attendanceIssue.date));
 		return { issues, scope: scope.scope };
@@ -1141,7 +1147,8 @@ export const listIssuesForReview = createServerFn({ method: "GET" }).handler(
 
 export const verifyIssue = createServerFn({ method: "POST" })
 	.validator(
-		(input: { issueId: string; decision: "verified" | "rejected" }) => input,
+		(input: { issueId: string; decision: "verified" | "rejected"; note?: string }) =>
+			input,
 	)
 	.handler(async ({ data }) => {
 		const context = await getOrgMemberContext();
@@ -1186,10 +1193,22 @@ export const verifyIssue = createServerFn({ method: "POST" })
 				reason: "This issue has no pending justification",
 			};
 		}
+		let reviewNote: string | null = null;
+		if (data.decision === "rejected") {
+			const note = (data.note ?? "").trim();
+			if (note.length < 5) {
+				return {
+					ok: false as const,
+					reason: "A reason of at least 5 characters is required to reject",
+				};
+			}
+			reviewNote = note;
+		}
 		await getDb()
 			.update(attendanceIssue)
 			.set({
 				status: data.decision,
+				reviewNote,
 				verifiedBy: context.session.user.id,
 				verifiedAt: new Date(),
 				updatedAt: new Date(),

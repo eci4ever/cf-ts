@@ -212,6 +212,7 @@ export const attendanceIssue = sqliteTable(
 		type: text("type").notNull(),
 		justification: text("justification"),
 		status: text("status").notNull().default("open"),
+		reviewNote: text("review_note"),
 		verifiedBy: text("verified_by").references(() => user.id, {
 			onDelete: "set null",
 		}),

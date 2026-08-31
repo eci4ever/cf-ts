@@ -735,6 +735,9 @@ type IssueRow = {
 	type: string;
 	justification: string | null;
 	status: string;
+	reviewNote?: string | null;
+	reviewerName?: string | null;
+	verifiedAt?: Date | string | null;
 };
 
 function IssueTypeBadge({ type }: { type: string }) {
@@ -766,6 +769,7 @@ function IssuesTab({ canReview }: { canReview: boolean }) {
 
 function IssueReviewCard() {
 	const queryClient = useQueryClient();
+	const [rejecting, setRejecting] = useState<IssueRow | null>(null);
 	const reviewQuery = useQuery({
 		queryKey: ["issues", "review"],
 		queryFn: ({ signal }) => listIssuesForReview({ signal }),
@@ -774,6 +778,7 @@ function IssueReviewCard() {
 		mutationFn: async (input: {
 			issueId: string;
 			decision: "verified" | "rejected";
+			note?: string;
 		}) => {
 			const result = await verifyIssue({ data: input });
 			if (!result.ok) {
@@ -787,6 +792,7 @@ function IssueReviewCard() {
 					? "Justification verified"
 					: "Justification rejected",
 			);
+			setRejecting(null);
 			queryClient.invalidateQueries({ queryKey: ["issues"] });
 		},
 		onError: (error) => {
@@ -794,11 +800,15 @@ function IssueReviewCard() {
 		},
 	});
 
-	function handleVerify(issueId: string, decision: "verified" | "rejected") {
-		verifyMutation.mutate({ issueId, decision });
+	function handleVerify(issueId: string) {
+		verifyMutation.mutate({ issueId, decision: "verified" });
 	}
 
 	const issues = (reviewQuery.data?.issues ?? []) as IssueRow[];
+	const pending = issues.filter((issue) => issue.status === "pending");
+	const decided = issues.filter(
+		(issue) => issue.status === "verified" || issue.status === "rejected",
+	);
 
 	return (
 		<Card>
@@ -808,12 +818,12 @@ function IssueReviewCard() {
 					Review justifications submitted for attendance issues in your scope.
 				</CardDescription>
 			</CardHeader>
-			<CardContent>
+			<CardContent className="flex flex-col gap-6">
 				{reviewQuery.isError ? (
 					<p className="text-sm text-destructive">Failed to load issues.</p>
 				) : reviewQuery.isPending ? (
 					<p className="text-sm text-muted-foreground">Loading…</p>
-				) : issues.length === 0 ? (
+				) : pending.length === 0 ? (
 					<p className="text-sm text-muted-foreground">
 						Nothing to review right now.
 					</p>
@@ -831,50 +841,186 @@ function IssueReviewCard() {
 							</TableRow>
 						</TableHeader>
 						<TableBody>
-							{issues
-								.filter((issue) => issue.status === "pending")
-								.map((issue) => (
-									<TableRow key={issue.id}>
-										<TableCell className="sticky left-0 z-10 bg-card [tr:hover_&]:bg-muted/50">
-											{issue.employeeName}
-											<span className="ml-2 text-xs text-muted-foreground">
-												{issue.employeeNo}
-											</span>
-										</TableCell>
-										<TableCell>{issue.date}</TableCell>
-										<TableCell>
-											<IssueTypeBadge type={issue.type} />
-										</TableCell>
-										<TableCell className="max-w-64 text-sm">
-											{issue.justification ?? "—"}
-										</TableCell>
-										<TableCell>
-											<div className="flex gap-1">
-												<Button
-													variant="ghost"
-													size="icon"
-													aria-label="Verify justification"
-													onClick={() => handleVerify(issue.id, "verified")}
-												>
-													<Check />
-												</Button>
-												<Button
-													variant="ghost"
-													size="icon"
-													aria-label="Reject justification"
-													onClick={() => handleVerify(issue.id, "rejected")}
-												>
-													<X />
-												</Button>
-											</div>
-										</TableCell>
-									</TableRow>
-								))}
+							{pending.map((issue) => (
+								<TableRow key={issue.id}>
+									<TableCell className="sticky left-0 z-10 bg-card [tr:hover_&]:bg-muted/50">
+										{issue.employeeName}
+										<span className="ml-2 text-xs text-muted-foreground">
+											{issue.employeeNo}
+										</span>
+									</TableCell>
+									<TableCell>{issue.date}</TableCell>
+									<TableCell>
+										<IssueTypeBadge type={issue.type} />
+									</TableCell>
+									<TableCell className="max-w-64 text-sm">
+										{issue.justification ?? "—"}
+									</TableCell>
+									<TableCell>
+										<div className="flex gap-1">
+											<Button
+												variant="ghost"
+												size="icon"
+												aria-label="Verify justification"
+												onClick={() => handleVerify(issue.id)}
+											>
+												<Check />
+											</Button>
+											<Button
+												variant="ghost"
+												size="icon"
+												aria-label="Reject justification"
+												onClick={() => setRejecting(issue)}
+											>
+												<X />
+											</Button>
+										</div>
+									</TableCell>
+								</TableRow>
+							))}
 						</TableBody>
 					</Table>
 				)}
+
+				{!reviewQuery.isPending &&
+					!reviewQuery.isError &&
+					(decided.length > 0 ? (
+						<div className="flex flex-col gap-2">
+							<h3 className="text-sm font-medium">Past decisions</h3>
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead className="sticky left-0 z-10 bg-card">
+											Employee
+										</TableHead>
+										<TableHead>Date</TableHead>
+										<TableHead>Issue</TableHead>
+										<TableHead>Justification</TableHead>
+										<TableHead>Decision</TableHead>
+										<TableHead>Reviewer</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{decided.map((issue) => (
+										<TableRow key={issue.id}>
+											<TableCell className="sticky left-0 z-10 bg-card [tr:hover_&]:bg-muted/50">
+												{issue.employeeName}
+												<span className="ml-2 text-xs text-muted-foreground">
+													{issue.employeeNo}
+												</span>
+											</TableCell>
+											<TableCell>{issue.date}</TableCell>
+											<TableCell>
+												<IssueTypeBadge type={issue.type} />
+											</TableCell>
+											<TableCell className="max-w-64 text-sm">
+												{issue.justification ?? "—"}
+												{issue.reviewNote ? (
+													<span className="block text-xs text-muted-foreground">
+														Reason: {issue.reviewNote}
+													</span>
+												) : null}
+											</TableCell>
+											<TableCell>
+												<IssueStatusBadge status={issue.status} />
+											</TableCell>
+											<TableCell className="text-sm">
+												{issue.reviewerName ?? "—"}
+												{issue.verifiedAt ? (
+													<span className="block text-xs text-muted-foreground">
+														{new Date(issue.verifiedAt).toLocaleDateString(
+															"en-US",
+															{ day: "numeric", month: "short", year: "numeric" },
+														)}
+													</span>
+												) : null}
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</div>
+					) : null)}
 			</CardContent>
+			<RejectDialog
+				issue={rejecting}
+				pending={verifyMutation.isPending}
+				onOpenChange={(open) => {
+					if (!open) {
+						setRejecting(null);
+					}
+				}}
+				onConfirm={(note) => {
+					if (rejecting) {
+						verifyMutation.mutate({
+							issueId: rejecting.id,
+							decision: "rejected",
+							note,
+						});
+					}
+				}}
+			/>
 		</Card>
+	);
+}
+
+function RejectDialog({
+	issue,
+	pending,
+	onOpenChange,
+	onConfirm,
+}: {
+	issue: IssueRow | null;
+	pending: boolean;
+	onOpenChange: (open: boolean) => void;
+	onConfirm: (note: string) => void;
+}) {
+	const [note, setNote] = useState("");
+
+	useEffect(() => {
+		if (issue) {
+			setNote("");
+		}
+	}, [issue]);
+
+	return (
+		<Dialog open={issue !== null} onOpenChange={onOpenChange}>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>
+						Reject justification — {issue?.date ?? ""}{" "}
+						{issue ? <IssueTypeBadge type={issue.type} /> : null}
+					</DialogTitle>
+					<DialogDescription>
+						State why this justification is rejected. The employee will see
+						your reason and can submit again.
+					</DialogDescription>
+				</DialogHeader>
+				<form
+					onSubmit={(event) => {
+						event.preventDefault();
+						onConfirm(note);
+					}}
+					className="flex flex-col gap-4"
+				>
+					<div className="flex flex-col gap-2">
+						<Label htmlFor="reject-note">Reason</Label>
+						<Textarea
+							id="reject-note"
+							value={note}
+							onChange={(event) => setNote(event.target.value)}
+							required
+							minLength={5}
+						/>
+					</div>
+					<DialogFooter>
+						<Button type="submit" variant="destructive" disabled={pending}>
+							{pending ? "Rejecting…" : "Reject justification"}
+						</Button>
+					</DialogFooter>
+				</form>
+			</DialogContent>
+		</Dialog>
 	);
 }
 
@@ -915,29 +1061,35 @@ function MyIssuesCard() {
 						No attendance issues this month. Keep it up!
 					</p>
 				) : (
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead>Date</TableHead>
-								<TableHead>Issue</TableHead>
-								<TableHead>Justification</TableHead>
-								<TableHead>Status</TableHead>
-								<TableHead className="w-12" />
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{issues.map((issue) => (
-								<TableRow key={issue.id}>
-									<TableCell>{issue.date}</TableCell>
-									<TableCell>
-										<IssueTypeBadge type={issue.type} />
-									</TableCell>
-									<TableCell className="max-w-64 text-sm">
-										{issue.justification ?? "—"}
-									</TableCell>
-									<TableCell>
-										<IssueStatusBadge status={issue.status} />
-									</TableCell>
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>Date</TableHead>
+									<TableHead>Issue</TableHead>
+									<TableHead>Justification</TableHead>
+									<TableHead>Status</TableHead>
+									<TableHead>Reviewer note</TableHead>
+									<TableHead className="w-12" />
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{issues.map((issue) => (
+									<TableRow key={issue.id}>
+										<TableCell>{issue.date}</TableCell>
+										<TableCell>
+											<IssueTypeBadge type={issue.type} />
+										</TableCell>
+										<TableCell className="max-w-64 text-sm">
+											{issue.justification ?? "—"}
+										</TableCell>
+										<TableCell>
+											<IssueStatusBadge status={issue.status} />
+										</TableCell>
+										<TableCell className="max-w-64 text-sm">
+											{issue.status === "rejected" && issue.reviewNote
+												? issue.reviewNote
+												: "—"}
+										</TableCell>
 									<TableCell>
 										{issue.status !== "verified" ? (
 											<Button
