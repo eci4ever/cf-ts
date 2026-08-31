@@ -290,7 +290,7 @@ export const getLeaveOverview = createServerFn({ method: "GET" }).handler(
 			.from(leaveType)
 			.where(eq(leaveType.organizationId, context.orgId))
 			.orderBy(leaveType.name);
-		const year = todayKey("Asia/Kuala_Lumpur").slice(0, 4);
+		const year = todayKey(context.org.timezone).slice(0, 4);
 		const balances = [];
 		for (const type of types) {
 			const used = context.employee
@@ -418,7 +418,7 @@ export const cancelLeave = createServerFn({ method: "POST" })
 		}
 		const isAdmin = ["owner", "admin"].includes(context.role ?? "");
 		const isOwn = context.employee?.id === request.employeeId;
-		const today = todayKey("Asia/Kuala_Lumpur");
+		const today = todayKey(context.org.timezone);
 		if (isOwn && request.status === "pending") {
 			// applicant cancelling own pending request
 		} else if (
@@ -577,7 +577,7 @@ export const decideLeave = createServerFn({ method: "POST" })
 			}
 		}
 		if (data.decision === "approved") {
-			const today = todayKey("Asia/Kuala_Lumpur");
+			const today = todayKey(context.org.timezone);
 			if (request.startDate < today) {
 				return {
 					ok: false as const,
