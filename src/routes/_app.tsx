@@ -84,8 +84,8 @@ function ImpersonationBanner() {
 		return null;
 	}
 	return (
-		<div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 text-sm">
-			<Badge variant="outline">
+		<div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-100 p-3 text-sm dark:border-amber-500/40 dark:bg-amber-950/60">
+			<Badge className="border-transparent bg-amber-500 text-amber-950">
 				<VenetianMask />
 				Impersonating
 			</Badge>
