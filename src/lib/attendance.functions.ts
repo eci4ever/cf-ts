@@ -17,7 +17,9 @@ import {
 	computeClockInStatus,
 	computeClockOutStatus,
 	computeTargetClockOut,
+	formatMinutes,
 	formatZonedDate,
+	getZonedParts,
 	parseTimeToMinutes,
 	type Schedule,
 	type Shift,
@@ -504,7 +506,9 @@ export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
 		const records = await getDb()
 			.select({
 				date: attendance.date,
+				clockIn: attendance.clockIn,
 				clockInStatus: attendance.clockInStatus,
+				clockOut: attendance.clockOut,
 				clockOutStatus: attendance.clockOutStatus,
 				locationStatus: attendance.locationStatus,
 				clockOutLocationStatus: attendance.clockOutLocationStatus,
@@ -520,7 +524,7 @@ export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
 		const byDate = new Map(records.map((row) => [row.date, row]));
 
 		const issues = await getDb()
-			.select({ date: attendanceIssue.date })
+			.select({ date: attendanceIssue.date, type: attendanceIssue.type })
 			.from(attendanceIssue)
 			.where(
 				and(
@@ -529,7 +533,12 @@ export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
 					lte(attendanceIssue.date, today),
 				),
 			);
-		const issueDates = new Set(issues.map((row) => row.date));
+		const issueTypes = new Map<string, string[]>();
+		for (const row of issues) {
+			const types = issueTypes.get(row.date) ?? [];
+			types.push(row.type);
+			issueTypes.set(row.date, types);
+		}
 
 		const leaves = await getDb()
 			.select({
@@ -555,7 +564,25 @@ export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
 		}
 
 		const workDays = schedule.workDays;
-		const days: { date: string; status: string }[] = [];
+		const formatClockTime = (timestamp: Date | null): string | null => {
+			if (!timestamp) {
+				return null;
+			}
+			return formatMinutes(
+				getZonedParts(timestamp, schedule.timezone).minutesSinceMidnight,
+			);
+		};
+		const days: {
+			date: string;
+			status: string;
+			clockIn: string | null;
+			clockInStatus: string | null;
+			clockOut: string | null;
+			clockOutStatus: string | null;
+			locationStatus: string | null;
+			clockOutLocationStatus: string | null;
+			issueTypes: string[];
+		}[] = [];
 		for (
 			let t = todayUtc - (WEEKS * 7 - 1) * DAY_MS;
 			t <= todayUtc;
@@ -564,27 +591,65 @@ export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
 			const date = new Date(t).toISOString().slice(0, 10);
 			const weekday = new Date(t).getUTCDay();
 			if (!workDays.includes(weekday)) {
-				days.push({ date, status: "off" });
+				days.push({
+					date,
+					status: "off",
+					clockIn: null,
+					clockInStatus: null,
+					clockOut: null,
+					clockOutStatus: null,
+					locationStatus: null,
+					clockOutLocationStatus: null,
+					issueTypes: [],
+				});
 				continue;
 			}
 			if (leaveDates.has(date)) {
-				days.push({ date, status: "leave" });
+				days.push({
+					date,
+					status: "leave",
+					clockIn: null,
+					clockInStatus: null,
+					clockOut: null,
+					clockOutStatus: null,
+					locationStatus: null,
+					clockOutLocationStatus: null,
+					issueTypes: [],
+				});
 				continue;
 			}
 			const record = byDate.get(date);
-			const hasIssue = issueDates.has(date);
+			const dayIssues = issueTypes.get(date);
+			const hasIssue = dayIssues !== undefined;
 			if (record) {
-				days.push({ date, status: hasIssue ? "issue" : "present" });
+				days.push({
+					date,
+					status: hasIssue ? "issue" : "present",
+					clockIn: formatClockTime(record.clockIn),
+					clockInStatus: record.clockInStatus,
+					clockOut: formatClockTime(record.clockOut),
+					clockOutStatus: record.clockOutStatus,
+					locationStatus: record.locationStatus,
+					clockOutLocationStatus: record.clockOutLocationStatus,
+					issueTypes: dayIssues ?? [],
+				});
 				continue;
 			}
-			if (date === today) {
-				days.push({ date, status: "today" });
-				continue;
-			}
-			days.push({
+			const bare = {
 				date,
-				status: hasIssue ? "absent" : "empty",
-			});
+				clockIn: null,
+				clockInStatus: null,
+				clockOut: null,
+				clockOutStatus: null,
+				locationStatus: null,
+				clockOutLocationStatus: null,
+				issueTypes: dayIssues ?? [],
+			};
+			if (date === today) {
+				days.push({ ...bare, status: "today" });
+				continue;
+			}
+			days.push({ ...bare, status: hasIssue ? "absent" : "empty" });
 		}
 		return { days, today };
 	},

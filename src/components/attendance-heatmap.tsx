@@ -1,4 +1,20 @@
-type HeatDay = { date: string; status: string };
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "#/components/ui/popover";
+
+type HeatDay = {
+	date: string;
+	status: string;
+	clockIn: string | null;
+	clockInStatus: string | null;
+	clockOut: string | null;
+	clockOutStatus: string | null;
+	locationStatus: string | null;
+	clockOutLocationStatus: string | null;
+	issueTypes: string[];
+};
 
 const STATUS_LABEL: Record<string, string> = {
 	present: "Present",
@@ -19,6 +35,122 @@ const STATUS_CLASS: Record<string, string> = {
 	off: "bg-muted/40",
 	empty: "bg-muted/50",
 };
+
+const CLOCK_IN_LABEL: Record<string, string> = {
+	on_time: "On time",
+	late: "Late",
+	manual: "Manual",
+};
+
+const CLOCK_OUT_LABEL: Record<string, string> = {
+	complete: "Complete",
+	short: "Short",
+	manual: "Manual",
+};
+
+const LOCATION_LABEL: Record<string, string> = {
+	inside: "On site",
+	outside: "Off site",
+};
+
+const ISSUE_TYPE_LABEL: Record<string, string> = {
+	outside: "Outside geofence",
+};
+
+function formatDayLabel(dateKey: string): string {
+	return new Date(`${dateKey}T00:00:00Z`).toLocaleDateString("en-US", {
+		weekday: "short",
+		day: "numeric",
+		month: "short",
+		year: "numeric",
+		timeZone: "UTC",
+	});
+}
+
+function LocationBadge({ status }: { status: string | null }) {
+	if (!status) {
+		return null;
+	}
+	return (
+		<span
+			className={`rounded px-1 py-0.5 text-[10px] ${
+				status === "outside"
+					? "bg-destructive/10 text-destructive"
+					: "bg-muted text-muted-foreground"
+			}`}
+		>
+			{LOCATION_LABEL[status] ?? status}
+		</span>
+	);
+}
+
+function DayDetailPopover({
+	day,
+	children,
+}: {
+	day: HeatDay;
+	children: React.ReactNode;
+}) {
+	return (
+		<Popover>
+			<PopoverTrigger asChild>{children}</PopoverTrigger>
+			<PopoverContent className="w-56 p-3 text-xs">
+				<p className="font-medium">{formatDayLabel(day.date)}</p>
+				<p className="text-muted-foreground">
+					{STATUS_LABEL[day.status] ?? day.status}
+				</p>
+				{day.clockIn || day.clockOut ? (
+					<div className="mt-2 flex flex-col gap-1">
+						{day.clockIn && (
+							<div className="flex items-center gap-1.5">
+								<span className="text-muted-foreground">In</span>
+								<span className="font-medium tabular-nums">{day.clockIn}</span>
+								{day.clockInStatus && (
+									<span
+										className={
+											day.clockInStatus === "late"
+												? "text-amber-600 dark:text-amber-400"
+												: "text-muted-foreground"
+										}
+									>
+										{CLOCK_IN_LABEL[day.clockInStatus] ?? day.clockInStatus}
+									</span>
+								)}
+								<LocationBadge status={day.locationStatus} />
+							</div>
+						)}
+						{day.clockOut && (
+							<div className="flex items-center gap-1.5">
+								<span className="text-muted-foreground">Out</span>
+								<span className="font-medium tabular-nums">{day.clockOut}</span>
+								{day.clockOutStatus && (
+									<span
+										className={
+											day.clockOutStatus === "short"
+												? "text-amber-600 dark:text-amber-400"
+												: "text-muted-foreground"
+										}
+									>
+										{CLOCK_OUT_LABEL[day.clockOutStatus] ?? day.clockOutStatus}
+									</span>
+								)}
+								<LocationBadge status={day.clockOutLocationStatus} />
+							</div>
+						)}
+					</div>
+				) : null}
+				{day.issueTypes.length > 0 && (
+					<p className="mt-2 text-destructive">
+						Issue:{" "}
+						{day.issueTypes
+							.map((type) => ISSUE_TYPE_LABEL[type] ?? type)
+							.join(", ")}
+					</p>
+				)}
+			</PopoverContent>
+		</Popover>
+	);
+}
 
 function mondayOffset(dateKey: string): number {
 	const utc = new Date(`${dateKey}T00:00:00Z`).getUTCDay();
@@ -100,11 +232,13 @@ export function AttendanceHeatmap({ days }: { days: HeatDay[] }) {
 					<div className="grid grid-flow-col grid-rows-7 gap-[3px]">
 						{cells.map((cell, index) =>
 							cell ? (
-								<div
-									key={cell.date}
-									title={`${cell.date} — ${STATUS_LABEL[cell.status] ?? cell.status}`}
-									className={`size-3 rounded-[3px] ${STATUS_CLASS[cell.status] ?? "bg-muted/50"}`}
-								/>
+								<DayDetailPopover key={cell.date} day={cell}>
+									<button
+										type="button"
+										aria-label={`${cell.date} — ${STATUS_LABEL[cell.status] ?? cell.status}`}
+										className={`size-3 cursor-pointer rounded-[3px] outline-none focus-visible:ring-2 focus-visible:ring-ring ${STATUS_CLASS[cell.status] ?? "bg-muted/50"}`}
+									/>
+								</DayDetailPopover>
 							) : (
 								<div key={`pad-${index}`} className="size-3" />
 							),
