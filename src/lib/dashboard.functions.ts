@@ -3,6 +3,7 @@ import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { getDb } from "#/db";
 import { attendance, employee, leaveRequest } from "#/db/schema";
 import { enumerateDays } from "./leave";
+import { getHolidayDates } from "./holidays";
 import { formatZonedDate } from "./schedule";
 import { getOrgMemberContext } from "./session";
 
@@ -175,6 +176,21 @@ export const getOrgAttendanceTrend = createServerFn({ method: "GET" }).handler(
 			const end = leave.endDate > today ? today : leave.endDate;
 			leaveDates.push(...enumerateDays(start, end));
 		}
+		const holidayDates = await getHolidayDates(
+			context.orgId,
+			rangeStart,
+			today,
+		);
+		const isWorkDate = (date: string) => {
+			const t = Date.UTC(
+				Number(date.slice(0, 4)),
+				Number(date.slice(5, 7)) - 1,
+				Number(date.slice(8, 10)),
+			);
+			return (
+				workDays.includes(new Date(t).getUTCDay()) && !holidayDates.has(date)
+			);
+		};
 
 		const weeks: {
 			weekStart: string;
@@ -193,21 +209,15 @@ export const getOrgAttendanceTrend = createServerFn({ method: "GET" }).handler(
 
 			let expected = 0;
 			for (let t = weekStartUtc; t <= weekEndUtc; t += DAY_MS) {
-				if (workDays.includes(new Date(t).getUTCDay())) {
+				const date = new Date(t).toISOString().slice(0, 10);
+				if (isWorkDate(date)) {
 					expected += targetIds.length;
 				}
 			}
 			let leaveDays = 0;
 			for (const date of leaveDates) {
-				if (date >= weekStart && date <= weekEnd) {
-					const t = Date.UTC(
-						Number(date.slice(0, 4)),
-						Number(date.slice(5, 7)) - 1,
-						Number(date.slice(8, 10)),
-					);
-					if (workDays.includes(new Date(t).getUTCDay())) {
-						leaveDays += 1;
-					}
+				if (date >= weekStart && date <= weekEnd && isWorkDate(date)) {
+					leaveDays += 1;
 				}
 			}
 			const denominator = Math.max(expected - leaveDays, 0);

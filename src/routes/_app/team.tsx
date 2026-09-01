@@ -62,6 +62,8 @@ type MemberRow = {
 	email: string;
 	role: string;
 	joinedAt: Date;
+	hasEmployeeRecord: boolean;
+	subordinateCount: number;
 };
 
 type InvitationRow = {
@@ -251,9 +253,15 @@ function TeamPage() {
 									<TableRow key={member.id}>
 										<TableCell className="font-medium">{member.name}</TableCell>
 										<TableCell>{member.email}</TableCell>
-										<TableCell>
-											<Badge variant="secondary">{member.role}</Badge>
-										</TableCell>
+											<TableCell>
+												<Badge variant="secondary">{member.role}</Badge>
+												{member.role === "supervisor" ? (
+													<span className="mt-1 block text-xs text-muted-foreground">
+														{member.subordinateCount} subordinate
+														{member.subordinateCount === 1 ? "" : "s"}
+													</span>
+												) : null}
+											</TableCell>
 										<TableCell>
 											{new Date(member.joinedAt).toLocaleDateString()}
 										</TableCell>
@@ -288,6 +296,9 @@ function TeamPage() {
 															>
 																<UserCog />
 																Make supervisor
+																{member.hasEmployeeRecord
+																	? ""
+																	: " (needs employee record)"}
 															</DropdownMenuItem>
 														) : null}
 														{member.role !== "admin" ? (

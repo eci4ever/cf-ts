@@ -1,7 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "#/db";
-import { member, organization, session, user } from "#/db/schema";
+import {
+	employee,
+	member,
+	orgHoliday,
+	organization,
+	session,
+	user,
+} from "#/db/schema";
 import { parseTimeToMinutes } from "./schedule";
 import { getCurrentSession } from "./session";
 
@@ -42,7 +49,6 @@ export const getOrgSettings = createServerFn({ method: "GET" }).handler(
 				workStartMinutes: organization.workStartMinutes,
 				workEndMinutes: organization.workEndMinutes,
 				graceMinutes: organization.graceMinutes,
-				timezone: organization.timezone,
 			})
 			.from(organization)
 			.where(eq(organization.id, orgId))
@@ -62,6 +68,50 @@ export const getOrgSettings = createServerFn({ method: "GET" }).handler(
 			.innerJoin(user, eq(member.userId, user.id))
 			.where(eq(member.organizationId, orgId))
 			.orderBy(asc(member.createdAt));
+		const employees = await getDb()
+			.select({
+				id: employee.id,
+				userId: employee.userId,
+				supervisorId: employee.supervisorId,
+				isActive: employee.isActive,
+			})
+			.from(employee)
+			.where(eq(employee.organizationId, orgId));
+		const employeeIdByUserId = new Map(
+			employees
+				.filter((row) => row.userId && row.isActive)
+				.map((row) => [row.userId!, row.id]),
+		);
+		const userIdByEmployeeId = new Map(
+			employees
+				.filter((row) => row.userId && row.isActive)
+				.map((row) => [row.id, row.userId!]),
+		);
+		const subordinateCountByUserId = new Map<string, number>();
+		for (const row of employees) {
+			if (!row.isActive || !row.supervisorId) continue;
+			const supervisorUserId = userIdByEmployeeId.get(row.supervisorId);
+			if (supervisorUserId) {
+				subordinateCountByUserId.set(
+					supervisorUserId,
+					(subordinateCountByUserId.get(supervisorUserId) ?? 0) + 1,
+				);
+			}
+		}
+		const membersWithMeta = members.map((entry) => ({
+			...entry,
+			hasEmployeeRecord: employeeIdByUserId.has(entry.userId),
+			subordinateCount: subordinateCountByUserId.get(entry.userId) ?? 0,
+		}));
+		const holidays = await getDb()
+			.select({
+				id: orgHoliday.id,
+				name: orgHoliday.name,
+				date: orgHoliday.date,
+			})
+			.from(orgHoliday)
+			.where(eq(orgHoliday.organizationId, orgId))
+			.orderBy(asc(orgHoliday.date));
 		return {
 			name: org.name,
 			slug: org.slug,
@@ -70,11 +120,12 @@ export const getOrgSettings = createServerFn({ method: "GET" }).handler(
 				workStartMinutes: org.workStartMinutes,
 				workEndMinutes: org.workEndMinutes,
 				graceMinutes: org.graceMinutes,
-				timezone: org.timezone,
+				timezone: "Asia/Kuala_Lumpur",
 			},
 			role,
 			currentUserId: currentSession.user.id,
-			members,
+			members: membersWithMeta,
+			holidays,
 		};
 	},
 );
@@ -98,13 +149,33 @@ export const setMemberRole = createServerFn({ method: "POST" })
 		if (!targetMember) {
 			return { ok: false as const, reason: "Member not found" };
 		}
-		if (targetMember.role === "owner") {
+	if (targetMember.role === "owner") {
+		return {
+			ok: false as const,
+			reason: "Use ownership transfer to change the owner's role",
+		};
+	}
+	if (role === "supervisor") {
+		const [linked] = await db
+			.select({ id: employee.id })
+			.from(employee)
+			.where(
+				and(
+					eq(employee.organizationId, orgId),
+					eq(employee.userId, data.userId),
+					eq(employee.isActive, true),
+				),
+			)
+			.limit(1);
+		if (!linked) {
 			return {
 				ok: false as const,
-				reason: "Use ownership transfer to change the owner's role",
+				reason:
+					"This user has no active employee record — add one on the Employees page first",
 			};
 		}
-		await db
+	}
+	await db
 			.update(member)
 			.set({ role })
 			.where(
@@ -120,7 +191,6 @@ export const updateSchedule = createServerFn({ method: "POST" })
 			startTime: string;
 			endTime: string;
 			graceMinutes: number;
-			timezone: string;
 		}) => input,
 	)
 	.handler(async ({ data }) => {
@@ -153,12 +223,8 @@ export const updateSchedule = createServerFn({ method: "POST" })
 				reason: "Grace must be between 0 and 240 minutes",
 			};
 		}
-		const timezone = data.timezone.trim();
-		try {
-			new Intl.DateTimeFormat("en-US", { timeZone: timezone });
-		} catch {
-			return { ok: false as const, reason: "Invalid timezone" };
-		}
+		// timezone is locked to Asia/Kuala_Lumpur — this product serves
+		// Malaysian SMEs, and changing tz would shift historical date boundaries
 		await getDb()
 			.update(organization)
 			.set({
@@ -166,7 +232,6 @@ export const updateSchedule = createServerFn({ method: "POST" })
 				workStartMinutes,
 				workEndMinutes,
 				graceMinutes,
-				timezone,
 			})
 			.where(eq(organization.id, orgId));
 		return { ok: true as const };
@@ -242,3 +307,53 @@ export const deleteCurrentOrg = createServerFn({ method: "POST" }).handler(
 		return { ok: true as const };
 	},
 );
+
+export const addHoliday = createServerFn({ method: "POST" })
+	.validator((input: { name: string; date: string }) => input)
+	.handler(async ({ data }) => {
+		const { orgId } = await requireOrgRole(["owner", "admin"]);
+		const name = data.name.trim();
+		const date = data.date.trim();
+		if (name.length < 2 || name.length > 60) {
+			return { ok: false as const, reason: "Name must be 2–60 characters" };
+		}
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+			return { ok: false as const, reason: "Invalid date" };
+		}
+		const [existing] = await getDb()
+			.select({ id: orgHoliday.id })
+			.from(orgHoliday)
+			.where(
+				and(eq(orgHoliday.organizationId, orgId), eq(orgHoliday.date, date)),
+			)
+			.limit(1);
+		if (existing) {
+			return {
+				ok: false as const,
+				reason: "A holiday already exists on that date",
+			};
+		}
+		await getDb().insert(orgHoliday).values({
+			id: crypto.randomUUID(),
+			organizationId: orgId,
+			name,
+			date,
+			createdAt: new Date(),
+		});
+		return { ok: true as const };
+	});
+
+export const deleteHoliday = createServerFn({ method: "POST" })
+	.validator((input: { holidayId: string }) => input)
+	.handler(async ({ data }) => {
+		const { orgId } = await requireOrgRole(["owner", "admin"]);
+		await getDb()
+			.delete(orgHoliday)
+			.where(
+				and(
+					eq(orgHoliday.id, data.holidayId),
+					eq(orgHoliday.organizationId, orgId),
+				),
+			);
+		return { ok: true as const };
+	});

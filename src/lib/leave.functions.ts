@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "#/db";
 import { employee, leaveRequest, leaveType, organization } from "#/db/schema";
 import { countWorkingDays, isValidDateKey, rangesOverlap } from "./leave";
+import { getHolidayDates } from "./holidays";
 import { getOrgMemberContext } from "./session";
 
 async function getMemberContext() {
@@ -192,6 +193,7 @@ async function usedDaysForYear(
 	leaveTypeId: string,
 	year: string,
 	workDays: number[],
+	holidayDates: Set<string>,
 ): Promise<number> {
 	const rows = await getDb()
 		.select({
@@ -215,7 +217,7 @@ async function usedDaysForYear(
 		if (start > end) {
 			continue;
 		}
-		total += countWorkingDays(start, end, workDays);
+		total += countWorkingDays(start, end, workDays, holidayDates);
 	}
 	return total;
 }
@@ -246,7 +248,8 @@ async function validateAndQuote(options: {
 		.where(eq(organization.id, (await getMemberContext())!.orgId))
 		.limit(1);
 	const workDays = org.workDays.split(",").map(Number);
-	const days = countWorkingDays(startDate, endDate, workDays);
+	const holidayDates = await getHolidayDates((await getMemberContext())!.orgId);
+	const days = countWorkingDays(startDate, endDate, workDays, holidayDates);
 	if (days <= 0) {
 		return { ok: false, reason: "The selected range contains no working days" };
 	}
@@ -300,6 +303,7 @@ async function validateAndQuote(options: {
 				startDate > yearStart ? startDate : yearStart,
 				endDate < yearEnd ? endDate : yearEnd,
 				workDays,
+				holidayDates,
 			);
 			if (portion <= 0) {
 				continue;
@@ -309,6 +313,7 @@ async function validateAndQuote(options: {
 				leaveTypeId,
 				yearKey,
 				workDays,
+				holidayDates,
 			);
 			parts.push({ year: yearKey, portion, used, remaining: type.quotaDays - used });
 			if (portion > type.quotaDays - used) {
@@ -342,10 +347,17 @@ export const getLeaveOverview = createServerFn({ method: "GET" }).handler(
 			.orderBy(leaveType.name);
 		const year = todayKey(context.org.timezone).slice(0, 4);
 		const workDays = context.org.workDays.split(",").map(Number);
+		const holidayDates = await getHolidayDates(context.orgId);
 		const balances = [];
 		for (const type of types) {
 			const used = context.employee
-				? await usedDaysForYear(context.employee.id, type.id, year, workDays)
+				? await usedDaysForYear(
+						context.employee.id,
+						type.id,
+						year,
+						workDays,
+						holidayDates,
+					)
 				: 0;
 			balances.push({
 				id: type.id,

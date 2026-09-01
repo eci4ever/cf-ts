@@ -3,6 +3,7 @@ import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { getDb } from "#/db";
 import { attendance, employee, leaveRequest, leaveType } from "#/db/schema";
 import { countWorkingDays, deriveIssues, enumerateDays } from "./leave";
+import { getHolidayDates } from "./holidays";
 import { formatZonedDate } from "./schedule";
 import { getOrgMemberContext } from "./session";
 
@@ -107,6 +108,7 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 			.from(leaveType)
 			.where(eq(leaveType.organizationId, context.orgId))
 			.orderBy(leaveType.name);
+		const holidayDates = await getHolidayDates(context.orgId);
 
 		const rows: ReportRow[] = [];
 		const targetIds = targets.map((row) => row.id);
@@ -179,7 +181,7 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 					covered.add(day);
 				}
 				leaveCoveredByEmployee.set(request.employeeId, covered);
-				const days = countWorkingDays(start, end, workDays);
+				const days = countWorkingDays(start, end, workDays, holidayDates);
 				const key = `${request.employeeId}:${request.leaveTypeId}`;
 				leaveDaysByEmployeeType.set(
 					key,
@@ -201,21 +203,22 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 				usedByEmployeeType.set(
 					key,
 					(usedByEmployeeType.get(key) ?? 0) +
-						countWorkingDays(start, end, workDays),
+						countWorkingDays(start, end, workDays, holidayDates),
 				);
 			}
 
 			for (const target of targets) {
 				const recs = recordsByEmployee.get(target.id) ?? [];
-				const issues = deriveIssues({
-					records: recs,
-					leaveCoveredDates:
-						leaveCoveredByEmployee.get(target.id) ?? new Set<string>(),
-					workDays,
-					rangeStart: monthStart,
-					rangeEnd: monthEnd,
-					today,
-				});
+			const issues = deriveIssues({
+				records: recs,
+				leaveCoveredDates:
+					leaveCoveredByEmployee.get(target.id) ?? new Set<string>(),
+				workDays,
+				holidayDates,
+				rangeStart: monthStart,
+				rangeEnd: monthEnd,
+				today,
+			});
 				const leaveDays: Record<string, number> = {};
 				const balanceRemaining: Record<string, number | null> = {};
 				for (const type of types) {
@@ -229,7 +232,12 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 					employeeId: target.id,
 					name: target.name,
 					employeeNo: target.employeeNo,
-					workingDays: countWorkingDays(monthStart, monthEnd, workDays),
+					workingDays: countWorkingDays(
+						monthStart,
+						monthEnd,
+						workDays,
+						holidayDates,
+					),
 					present: recs.length,
 					late: recs.filter((record) => record.clockInStatus === "late").length,
 					earlyOut: recs.filter((record) => record.clockOutStatus === "short")

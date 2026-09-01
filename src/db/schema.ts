@@ -125,6 +125,22 @@ export const workSite = sqliteTable("work_site", {
 	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
+export const orgHoliday = sqliteTable(
+	"org_holiday",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		date: text("date").notNull(),
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+	},
+	(table) => [
+		uniqueIndex("org_holiday_org_date_uq").on(table.organizationId, table.date),
+	],
+);
+
 export const employee = sqliteTable(
 	"employee",
 	{

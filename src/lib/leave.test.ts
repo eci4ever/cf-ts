@@ -56,6 +56,23 @@ describe("countWorkingDays", () => {
 	it("handles a single day", () => {
 		expect(countWorkingDays("2026-08-27", "2026-08-27", WEEKDAYS)).toBe(1);
 	});
+
+	it("excludes public holidays from the count", () => {
+		const holidays = new Set(["2026-08-27"]);
+		expect(
+			countWorkingDays("2026-08-24", "2026-08-30", WEEKDAYS, holidays),
+		).toBe(4);
+		expect(countWorkingDays("2026-08-27", "2026-08-27", WEEKDAYS, holidays)).toBe(
+			0,
+		);
+	});
+
+	it("ignores holidays falling on non-work days", () => {
+		const holidays = new Set(["2026-08-30"]); // Sunday
+		expect(
+			countWorkingDays("2026-08-24", "2026-08-30", WEEKDAYS, holidays),
+		).toBe(5);
+	});
 });
 
 describe("rangesOverlap", () => {
@@ -148,6 +165,21 @@ describe("deriveIssues", () => {
 		expect(issues).toEqual([
 			{ date: "2026-08-26", type: "absent" },
 			{ date: "2026-08-27", type: "absent" },
+			{ date: "2026-08-28", type: "absent" },
+		]);
+	});
+
+	it("never flags absent on public holidays", () => {
+		const issues = deriveIssues({
+			records: [],
+			leaveCoveredDates: new Set(),
+			workDays: WEEKDAYS,
+			holidayDates: new Set(["2026-08-26", "2026-08-27"]),
+			...range,
+		});
+		expect(issues).toEqual([
+			{ date: "2026-08-24", type: "absent" },
+			{ date: "2026-08-25", type: "absent" },
 			{ date: "2026-08-28", type: "absent" },
 		]);
 	});

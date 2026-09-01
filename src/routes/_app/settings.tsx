@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
-import { AlertTriangle, Crown, Settings as SettingsIcon } from "lucide-react";
+import { AlertTriangle, CalendarOff, Crown, Settings as SettingsIcon, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -47,7 +47,9 @@ import {
 } from "#/lib/leave.functions";
 import { getMyOrgRole } from "#/lib/org.functions";
 import {
+	addHoliday,
 	deleteCurrentOrg,
+	deleteHoliday,
 	getOrgSettings,
 	transferOwnership,
 	updateOrgName,
@@ -116,6 +118,10 @@ function SettingsPage() {
 			<ScheduleCard
 				schedule={settings.schedule}
 				onSaved={() => queryClient.invalidateQueries({ queryKey: ["org"] })}
+			/>
+			<HolidaysCard
+				holidays={settings.holidays}
+				onChanged={() => queryClient.invalidateQueries({ queryKey: ["org"] })}
 			/>
 			<GeofenceCard />
 			<LeaveTypesCard />
@@ -186,14 +192,13 @@ function ScheduleCard({
 		`${String(Math.floor(schedule.workEndMinutes / 60)).padStart(2, "0")}:${String(schedule.workEndMinutes % 60).padStart(2, "0")}`,
 	);
 	const [grace, setGrace] = useState(String(schedule.graceMinutes));
-	const [timezone, setTimezone] = useState(schedule.timezone);
+	const [warnOpen, setWarnOpen] = useState(false);
 	const scheduleMutation = useMutation({
 		mutationFn: async (input: {
 			workDays: number[];
 			startTime: string;
 			endTime: string;
 			graceMinutes: number;
-			timezone: string;
 		}) => {
 			const result = await updateSchedule({ data: input });
 			if (!result.ok) {
@@ -219,14 +224,12 @@ function ScheduleCard({
 		);
 	}
 
-	function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-		event.preventDefault();
+	function handleProceed() {
 		scheduleMutation.mutate({
 			workDays: days,
 			startTime,
 			endTime,
 			graceMinutes: Number(grace),
-			timezone,
 		});
 	}
 
@@ -246,11 +249,17 @@ function ScheduleCard({
 				<CardDescription>
 					Applies to the whole organization. Normal shift is late after{" "}
 					{startTime} + grace; Flexi is late after {startTime} sharp and targets{" "}
-					{flexiHours} hours from clock-in.
+					{flexiHours} hours from clock-in. Timezone is locked to Asia/Kuala_Lumpur.
 				</CardDescription>
 			</CardHeader>
 			<CardContent>
-				<form onSubmit={handleSubmit} className="flex flex-col gap-4">
+				<form
+					onSubmit={(event) => {
+						event.preventDefault();
+						setWarnOpen(true);
+					}}
+					className="flex flex-col gap-4"
+				>
 					<div className="flex flex-col gap-2">
 						<Label>Work days</Label>
 						<div className="flex flex-wrap gap-2">
@@ -267,7 +276,7 @@ function ScheduleCard({
 							))}
 						</div>
 					</div>
-					<div className="grid gap-4 sm:grid-cols-4">
+					<div className="grid gap-4 sm:grid-cols-3">
 						<div className="flex flex-col gap-2">
 							<Label htmlFor="schedule-start">Start time</Label>
 							<Input
@@ -300,15 +309,6 @@ function ScheduleCard({
 								required
 							/>
 						</div>
-						<div className="flex flex-col gap-2">
-							<Label htmlFor="schedule-timezone">Timezone</Label>
-							<Input
-								id="schedule-timezone"
-								value={timezone}
-								onChange={(event) => setTimezone(event.target.value)}
-								required
-							/>
-						</div>
 					</div>
 					<Button
 						type="submit"
@@ -318,6 +318,161 @@ function ScheduleCard({
 						{scheduleMutation.isPending ? "Saving..." : "Save schedule"}
 					</Button>
 				</form>
+				<AlertDialog open={warnOpen} onOpenChange={setWarnOpen}>
+					<AlertDialogContent>
+						<AlertDialogHeader>
+							<AlertDialogTitle>Apply new schedule?</AlertDialogTitle>
+							<AlertDialogDescription>
+								This change also affects historical reporting: expected working
+								days in reports, trends and leave balances are recalculated
+								using the new schedule. Existing late/absent statuses stay as
+								recorded at clock-in time.
+							</AlertDialogDescription>
+						</AlertDialogHeader>
+						<AlertDialogFooter>
+							<AlertDialogCancel>Cancel</AlertDialogCancel>
+							<AlertDialogAction onClick={handleProceed}>
+								{scheduleMutation.isPending ? "Applying..." : "Apply schedule"}
+							</AlertDialogAction>
+						</AlertDialogFooter>
+					</AlertDialogContent>
+				</AlertDialog>
+			</CardContent>
+		</Card>
+	);
+}
+
+type HolidayRow = {
+	id: string;
+	name: string;
+	date: string;
+};
+
+function HolidaysCard({
+	holidays,
+	onChanged,
+}: {
+	holidays: HolidayRow[];
+	onChanged: () => void;
+}) {
+	const [name, setName] = useState("");
+	const [date, setDate] = useState("");
+	const addMutation = useMutation({
+		mutationFn: async (input: { name: string; date: string }) => {
+			const result = await addHoliday({ data: input });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: () => {
+			toast.success("Holiday added");
+			setName("");
+			setDate("");
+			onChanged();
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
+	const deleteMutation = useMutation({
+		mutationFn: async (input: { holidayId: string }) => {
+			const result = await deleteHoliday({ data: input });
+			if (!result.ok) {
+				throw new Error("Failed to remove holiday");
+			}
+			return result;
+		},
+		onSuccess: () => {
+			toast.success("Holiday removed");
+			onChanged();
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
+
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle className="flex items-center gap-2">
+					<CalendarOff />
+					Public holidays
+				</CardTitle>
+				<CardDescription>
+					Holidays are treated as non-working days: no attendance is expected,
+					they are excluded from reports, trends and leave-day counts. Employees
+					can still clock in on a holiday.
+				</CardDescription>
+			</CardHeader>
+			<CardContent className="flex flex-col gap-4">
+				<form
+					onSubmit={(event) => {
+						event.preventDefault();
+						addMutation.mutate({ name, date });
+					}}
+					className="flex flex-wrap items-end gap-2"
+				>
+					<div className="flex flex-col gap-2">
+						<Label htmlFor="holiday-date">Date</Label>
+						<Input
+							id="holiday-date"
+							type="date"
+							value={date}
+							onChange={(event) => setDate(event.target.value)}
+							required
+							className="w-40"
+						/>
+					</div>
+					<div className="flex min-w-48 flex-1 flex-col gap-2">
+						<Label htmlFor="holiday-name">Name</Label>
+						<Input
+							id="holiday-name"
+							value={name}
+							onChange={(event) => setName(event.target.value)}
+							placeholder="Hari Raya Aidilfitri"
+							required
+							minLength={2}
+							maxLength={60}
+						/>
+					</div>
+					<Button
+						type="submit"
+						variant="outline"
+						disabled={addMutation.isPending}
+					>
+						{addMutation.isPending ? "Adding..." : "Add holiday"}
+					</Button>
+				</form>
+				{holidays.length === 0 ? (
+					<p className="text-sm text-muted-foreground">
+						No holidays configured yet.
+					</p>
+				) : (
+					<ul className="flex flex-col gap-1">
+						{holidays.map((holiday) => (
+							<li
+								key={holiday.id}
+								className="flex items-center justify-between gap-2 rounded border px-3 py-1.5 text-sm"
+							>
+								<span>
+									{holiday.date} — {holiday.name}
+								</span>
+								<Button
+									variant="ghost"
+									size="icon"
+									aria-label={`Remove ${holiday.name}`}
+									disabled={deleteMutation.isPending}
+									onClick={() =>
+										deleteMutation.mutate({ holidayId: holiday.id })
+									}
+								>
+									<Trash2 />
+								</Button>
+							</li>
+						))}
+					</ul>
+				)}
 			</CardContent>
 		</Card>
 	);

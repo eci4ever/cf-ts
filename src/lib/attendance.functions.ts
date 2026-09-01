@@ -12,6 +12,7 @@ import {
 	workSite,
 } from "#/db/schema";
 import { deriveIssues, enumerateDays } from "./leave";
+import { getHolidayDates } from "./holidays";
 import {
 	type ClockInStatus,
 	type ClockOutStatus,
@@ -491,7 +492,7 @@ export const clockOut = createServerFn({ method: "POST" })
 
 export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
 	async () => {
-		const { schedule, employee: linked } = await getOrgAndEmployee();
+		const { org, schedule, employee: linked } = await getOrgAndEmployee();
 		if (!linked) {
 			return { days: [], today: "" };
 		}
@@ -503,6 +504,7 @@ export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
 		const rangeStart = new Date(todayUtc - (WEEKS * 7 - 1) * DAY_MS)
 			.toISOString()
 			.slice(0, 10);
+		const holidayDates = await getHolidayDates(org.id, rangeStart, today);
 
 		const records = await getDb()
 			.select({
@@ -601,6 +603,21 @@ export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
 					clockOutStatus: null,
 					locationStatus: null,
 					clockOutLocationStatus: null,
+					issueTypes: [],
+				});
+				continue;
+			}
+			if (holidayDates.has(date)) {
+				const holidayRecord = byDate.get(date);
+				days.push({
+					date,
+					status: holidayRecord ? "present" : "holiday",
+					clockIn: formatClockTime(holidayRecord?.clockIn ?? null),
+					clockInStatus: holidayRecord?.clockInStatus ?? null,
+					clockOut: formatClockTime(holidayRecord?.clockOut ?? null),
+					clockOutStatus: holidayRecord?.clockOutStatus ?? null,
+					locationStatus: holidayRecord?.locationStatus ?? null,
+					clockOutLocationStatus: holidayRecord?.clockOutLocationStatus ?? null,
 					issueTypes: [],
 				});
 				continue;
@@ -939,6 +956,7 @@ async function syncIssues(options: {
 		list.push(record);
 		recordsByEmployee.set(record.employeeId, list);
 	}
+	const holidayDates = await getHolidayDates(options.orgId, monthStart, today);
 	const derived: {
 		organizationId: string;
 		employeeId: string;
@@ -954,6 +972,7 @@ async function syncIssues(options: {
 					.map((key) => key.split(":")[1]),
 			),
 			workDays: options.workDays,
+			holidayDates,
 			rangeStart: monthStart,
 			rangeEnd: today,
 			today,

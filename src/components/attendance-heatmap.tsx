@@ -21,6 +21,7 @@ const STATUS_LABEL: Record<string, string> = {
 	issue: "Attendance issue",
 	absent: "Absent (issue)",
 	leave: "On leave",
+	holiday: "Public holiday",
 	today: "Not clocked in yet",
 	off: "Rest day",
 	empty: "No record",
@@ -31,6 +32,7 @@ const STATUS_CLASS: Record<string, string> = {
 	issue: "bg-amber-500",
 	absent: "bg-destructive/80",
 	leave: "bg-emerald-500",
+	holiday: "bg-sky-400",
 	today: "border border-primary/40 bg-transparent",
 	off: "bg-muted/40",
 	empty: "bg-muted/50",
@@ -252,6 +254,7 @@ export function AttendanceHeatmap({ days }: { days: HeatDay[] }) {
 					["issue", "Attendance issue"],
 					["absent", "Absent"],
 					["leave", "Leave"],
+					["holiday", "Public holiday"],
 					["off", "Rest day"],
 					["empty", "No record"],
 				].map(([status, label]) => (

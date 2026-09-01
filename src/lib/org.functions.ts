@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { getDb } from "#/db";
-import { invitation, member, organization, user } from "#/db/schema";
+import { employee, invitation, member, organization, user } from "#/db/schema";
 import { getCurrentSession } from "./session";
 
 export const listOrgMembers = createServerFn({ method: "GET" }).handler(
@@ -14,7 +14,7 @@ export const listOrgMembers = createServerFn({ method: "GET" }).handler(
 		if (!activeOrganizationId) {
 			throw new Error("No active organization");
 		}
-		return getDb()
+		const members = await getDb()
 			.select({
 				id: member.id,
 				userId: user.id,
@@ -27,6 +27,41 @@ export const listOrgMembers = createServerFn({ method: "GET" }).handler(
 			.innerJoin(user, eq(member.userId, user.id))
 			.where(eq(member.organizationId, activeOrganizationId))
 			.orderBy(asc(member.createdAt));
+		const employees = await getDb()
+			.select({
+				id: employee.id,
+				userId: employee.userId,
+				supervisorId: employee.supervisorId,
+				isActive: employee.isActive,
+			})
+			.from(employee)
+			.where(eq(employee.organizationId, activeOrganizationId));
+		const userIdByEmployeeId = new Map(
+			employees
+				.filter((row) => row.userId && row.isActive)
+				.map((row) => [row.id, row.userId!]),
+		);
+		const activeEmployeeUserIds = new Set(
+			employees
+				.filter((row) => row.userId && row.isActive)
+				.map((row) => row.userId!),
+		);
+		const subordinateCountByUserId = new Map<string, number>();
+		for (const row of employees) {
+			if (!row.isActive || !row.supervisorId) continue;
+			const supervisorUserId = userIdByEmployeeId.get(row.supervisorId);
+			if (supervisorUserId) {
+				subordinateCountByUserId.set(
+					supervisorUserId,
+					(subordinateCountByUserId.get(supervisorUserId) ?? 0) + 1,
+				);
+			}
+		}
+		return members.map((entry) => ({
+			...entry,
+			hasEmployeeRecord: activeEmployeeUserIds.has(entry.userId),
+			subordinateCount: subordinateCountByUserId.get(entry.userId) ?? 0,
+		}));
 	},
 );
 

@@ -35,9 +35,11 @@ export function countWorkingDays(
 	startDate: string,
 	endDate: string,
 	workDays: number[],
+	holidayDates?: Set<string>,
 ): number {
-	return enumerateDays(startDate, endDate).filter((dateKey) =>
-		workDays.includes(weekdayOf(dateKey)),
+	return enumerateDays(startDate, endDate).filter(
+		(dateKey) =>
+			workDays.includes(weekdayOf(dateKey)) && !holidayDates?.has(dateKey),
 	).length;
 }
 
@@ -66,11 +68,12 @@ export function deriveIssues(options: {
 	records: AttendanceRecordSnapshot[];
 	leaveCoveredDates: Set<string>;
 	workDays: number[];
+	holidayDates?: Set<string>;
 	rangeStart: string;
 	rangeEnd: string;
 	today: string;
 }): DerivedIssue[] {
-	const { records, leaveCoveredDates, workDays, rangeStart, rangeEnd, today } =
+	const { records, leaveCoveredDates, workDays, holidayDates, rangeStart, rangeEnd, today } =
 		options;
 	const issues: DerivedIssue[] = [];
 	const recordByDate = new Map(records.map((record) => [record.date, record]));
@@ -86,7 +89,10 @@ export function deriveIssues(options: {
 		}
 		const record = recordByDate.get(dateKey);
 		if (!record) {
-			issues.push({ date: dateKey, type: "absent" });
+			// public holidays carry no attendance expectation — never "absent"
+			if (!holidayDates?.has(dateKey)) {
+				issues.push({ date: dateKey, type: "absent" });
+			}
 			continue;
 		}
 		if (record.clockInStatus === "late") {
