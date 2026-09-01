@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "#/db";
 import { creditLedger, member, organization } from "#/db/schema";
 import { getCurrentSession } from "./session";
@@ -336,11 +336,13 @@ export const listOrgBilling = createServerFn({ method: "GET" }).handler(
 				balanceSen: organization.balanceSen,
 				paidUntil: organization.paidUntil,
 				createdAt: organization.createdAt,
+				memberCount: sql<number>`(select count(*) from ${member} where ${member.organizationId} = ${organization.id})`,
 			})
 			.from(organization)
 			.orderBy(desc(organization.createdAt));
-		return rows.map((row) => ({
+		return rows.map(({ memberCount, ...row }) => ({
 			...row,
+			memberCount: Number(memberCount),
 			plan: row.plan as PlanId,
 			pendingPlan: (row.pendingPlan as PlanId | null) ?? null,
 			status: statusFor(row as OrganizationRow, new Date()),

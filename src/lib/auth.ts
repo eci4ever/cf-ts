@@ -19,8 +19,7 @@ function createAuth() {
 		}),
 		emailAndPassword: {
 			enabled: true,
-			sendResetPassword: async ({ user, url }) => {
-				const brand = env.EMAIL_BRAND_NAME || "TapMe";
+			sendResetPassword: async ({ user, url }) => {				const brand = env.EMAIL_BRAND_NAME || "TapMe";
 				await sendEmail({
 					to: user.email,
 					subject: `Reset your password on ${brand}`,
@@ -48,6 +47,25 @@ function createAuth() {
 					`,
 				});
 			},
+		},
+		rateLimit: {
+			enabled: true,
+			window: 60,
+			max: 100,
+			specialRules: [
+				{
+					matcher: (request: { path: string }) =>
+						request.path === "/sign-in/email",
+					window: 60,
+					max: 5,
+				},
+				{
+					matcher: (request: { path: string }) =>
+						request.path === "/forget-password",
+					window: 60,
+					max: 3,
+				},
+			],
 		},
 		plugins: [
 			admin(),

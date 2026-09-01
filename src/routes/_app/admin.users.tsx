@@ -63,6 +63,8 @@ type UserRow = {
 	banned?: boolean | null;
 	banReason?: string | null;
 	banExpires?: Date | null;
+	twoFactorEnabled?: boolean | null;
+	createdAt?: Date | string | null;
 };
 
 const BAN_DURATIONS = [
@@ -78,6 +80,7 @@ function UsersAdminPage() {
 	const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 25 });
 	const [searchInput, setSearchInput] = useState("");
 	const [search, setSearch] = useState("");
+	const [searchField, setSearchField] = useState<"email" | "name">("email");
 	const [banTarget, setBanTarget] = useState<UserRow | null>(null);
 
 	useEffect(() => {
@@ -88,6 +91,10 @@ function UsersAdminPage() {
 		return () => clearTimeout(timer);
 	}, [searchInput]);
 
+	useEffect(() => {
+		setPagination((previous) => ({ ...previous, pageIndex: 0 }));
+	}, [searchField]);
+
 	const usersQuery = useQuery({
 		queryKey: [
 			"admin",
@@ -95,6 +102,7 @@ function UsersAdminPage() {
 			pagination.pageSize,
 			pagination.pageIndex,
 			search,
+			searchField,
 		],
 		queryFn: async () => {
 			const { data, error } = await authClient.admin.listUsers({
@@ -102,7 +110,7 @@ function UsersAdminPage() {
 					limit: pagination.pageSize,
 					offset: pagination.pageIndex * pagination.pageSize,
 					searchValue: search || undefined,
-					searchField: "email",
+					searchField,
 					searchOperator: "contains",
 					sortBy: "createdAt",
 					sortDirection: "desc",
@@ -198,6 +206,24 @@ function UsersAdminPage() {
 			),
 		},
 		{
+			accessorKey: "twoFactorEnabled",
+			header: "2FA",
+			cell: ({ row }) =>
+				row.original.twoFactorEnabled ? (
+					<Badge variant="outline">On</Badge>
+				) : (
+					<span className="text-xs text-muted-foreground">—</span>
+				),
+		},
+		{
+			accessorKey: "createdAt",
+			header: "Joined",
+			cell: ({ row }) =>
+				row.original.createdAt
+					? new Date(row.original.createdAt).toLocaleDateString()
+					: "—",
+		},
+		{
 			accessorKey: "banned",
 			header: "Status",
 			cell: ({ row }) =>
@@ -284,7 +310,7 @@ function UsersAdminPage() {
 			<CardHeader>
 				<CardTitle>User management</CardTitle>
 				<CardDescription>
-					Search by email, manage roles, bans and impersonation
+					Search by name or email, manage roles, bans and impersonation
 				</CardDescription>
 			</CardHeader>
 			<CardContent>
@@ -295,11 +321,29 @@ function UsersAdminPage() {
 					totalRows={total}
 					stickyColumn
 					toolbar={
-						<DataTableSearchInput
-							value={searchInput}
-							onChange={setSearchInput}
-							placeholder="Search by email…"
-						/>
+						<div className="flex items-center gap-2">
+							<Select
+								value={searchField}
+								onValueChange={(value) =>
+									setSearchField(value as "email" | "name")
+								}
+							>
+								<SelectTrigger className="h-9 w-28">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectGroup>
+										<SelectItem value="email">Email</SelectItem>
+										<SelectItem value="name">Name</SelectItem>
+									</SelectGroup>
+								</SelectContent>
+							</Select>
+							<DataTableSearchInput
+								value={searchInput}
+								onChange={setSearchInput}
+								placeholder={`Search by ${searchField}…`}
+							/>
+						</div>
 					}
 				/>
 			</CardContent>

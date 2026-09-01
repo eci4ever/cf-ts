@@ -67,6 +67,7 @@ type OrgBillingRow = {
 	balanceSen: number;
 	paidUntil: Date | null;
 	status: SubscriptionStatus;
+	memberCount: number;
 };
 
 type LedgerRow = {
@@ -84,6 +85,8 @@ function OrganizationsAdminPage() {
 	const [topUpOrg, setTopUpOrg] = useState<OrgBillingRow | null>(null);
 	const [ledgerOrg, setLedgerOrg] = useState<OrgBillingRow | null>(null);
 	const [sorting, setSorting] = useState([{ id: "name", desc: false }]);
+	const [search, setSearch] = useState("");
+	const [statusFilter, setStatusFilter] = useState<string>("all");
 	const orgsQuery = useQuery({
 		queryKey: ["admin", "orgs"],
 		queryFn: async () => {
@@ -91,7 +94,18 @@ function OrganizationsAdminPage() {
 			return rows as OrgBillingRow[];
 		},
 	});
-	const orgs = orgsQuery.data ?? [];
+	const orgs = (orgsQuery.data ?? []).filter((org) => {
+		if (
+			search &&
+			!org.name.toLowerCase().includes(search.toLowerCase())
+		) {
+			return false;
+		}
+		if (statusFilter !== "all" && org.status !== statusFilter) {
+			return false;
+		}
+		return true;
+	});
 	const loading = orgsQuery.isPending;
 	const adjustMutation = useMutation({
 		mutationFn: async (input: {
@@ -154,12 +168,44 @@ function OrganizationsAdminPage() {
 			cell: ({ row }) => formatRm(row.original.balanceSen),
 		},
 		{
+			accessorKey: "memberCount",
+			header: ({ column }) => (
+				<SortableHeader column={column} title="Members" />
+			),
+			cell: ({ row }) => row.original.memberCount,
+		},
+		{
 			accessorKey: "paidUntil",
 			header: "Paid until",
-			cell: ({ row }) =>
-				row.original.paidUntil
-					? new Date(row.original.paidUntil).toLocaleDateString()
-					: "—",
+			cell: ({ row }) => {
+				const paidUntil = row.original.paidUntil;
+				if (!paidUntil) {
+					return "—";
+				}
+				const days = Math.round(
+					(new Date(paidUntil).getTime() - Date.now()) / 86_400_000,
+				);
+				const relative =
+					days >= 0
+						? `${days} day${days === 1 ? "" : "s"} left`
+						: `expired ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} ago`;
+				return (
+					<div>
+						{new Date(paidUntil).toLocaleDateString()}
+						<p
+							className={`text-xs ${
+								days < 0
+									? "text-destructive"
+									: days <= 7
+										? "text-amber-600 dark:text-amber-400"
+										: "text-muted-foreground"
+							}`}
+						>
+							{relative}
+						</p>
+					</div>
+				);
+			},
 		},
 		{
 			accessorKey: "status",
@@ -227,6 +273,29 @@ function OrganizationsAdminPage() {
 					loading={loading}
 					columnCount={columns.length}
 					stickyColumn
+					toolbar={
+						<div className="flex items-center gap-2">
+							<Input
+								value={search}
+								onChange={(event) => setSearch(event.target.value)}
+								placeholder="Search organization…"
+								className="h-9 w-56"
+							/>
+							<Select value={statusFilter} onValueChange={setStatusFilter}>
+								<SelectTrigger className="h-9 w-36">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectGroup>
+										<SelectItem value="all">All statuses</SelectItem>
+										<SelectItem value="active">Active</SelectItem>
+										<SelectItem value="warning">Warning</SelectItem>
+										<SelectItem value="grace">Grace</SelectItem>
+									</SelectGroup>
+								</SelectContent>
+							</Select>
+						</div>
+					}
 				/>
 			</CardContent>
 			<OrgTopUpDialog

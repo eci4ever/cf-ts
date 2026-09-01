@@ -4,6 +4,7 @@ import {
 	BarChart3,
 	Building2,
 	CalendarDays,
+	Gauge,
 	LayoutDashboard,
 	Settings,
 	Timer,
@@ -68,6 +69,12 @@ export const navGroups: NavGroup[] = [
 	{
 		label: "Platform Admin",
 		items: [
+			{
+				title: "Overview",
+				to: "/admin",
+				icon: Gauge,
+				adminOnly: true,
+			},
 			{ title: "Users", to: "/admin/users", icon: UsersRound, adminOnly: true },
 			{
 				title: "Organization",
