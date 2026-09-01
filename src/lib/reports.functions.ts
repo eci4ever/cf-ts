@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { getDb } from "#/db";
 import { attendance, employee, leaveRequest, leaveType } from "#/db/schema";
 import { countWorkingDays, deriveIssues, enumerateDays } from "./leave";
@@ -145,11 +145,12 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 						gte(leaveRequest.endDate, monthStart),
 					),
 				);
-			const yearUsed = await getDb()
+			const usedRanges = await getDb()
 				.select({
 					employeeId: leaveRequest.employeeId,
 					leaveTypeId: leaveRequest.leaveTypeId,
-					days: leaveRequest.days,
+					startDate: leaveRequest.startDate,
+					endDate: leaveRequest.endDate,
 				})
 				.from(leaveRequest)
 				.where(
@@ -157,7 +158,6 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 						inArray(leaveRequest.employeeId, targetIds),
 						eq(leaveRequest.organizationId, context.orgId),
 						inArray(leaveRequest.status, ["pending", "approved"]),
-						sql`substr(${leaveRequest.startDate}, 1, 4) = ${balanceYear}`,
 					),
 				);
 
@@ -187,11 +187,21 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 				);
 			}
 			const usedByEmployeeType = new Map<string, number>();
-			for (const row of yearUsed) {
+			const balanceYearStart = `${balanceYear}-01-01`;
+			const balanceYearEnd = `${balanceYear}-12-31`;
+			for (const row of usedRanges) {
+				const start =
+					row.startDate < balanceYearStart ? balanceYearStart : row.startDate;
+				const end =
+					row.endDate > balanceYearEnd ? balanceYearEnd : row.endDate;
+				if (start > end) {
+					continue;
+				}
 				const key = `${row.employeeId}:${row.leaveTypeId}`;
 				usedByEmployeeType.set(
 					key,
-					(usedByEmployeeType.get(key) ?? 0) + row.days,
+					(usedByEmployeeType.get(key) ?? 0) +
+						countWorkingDays(start, end, workDays),
 				);
 			}
 
@@ -224,7 +234,9 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 					late: recs.filter((record) => record.clockInStatus === "late").length,
 					earlyOut: recs.filter((record) => record.clockOutStatus === "short")
 						.length,
-					missingOut: recs.filter((record) => record.clockOut === null).length,
+					missingOut: recs.filter(
+						(record) => record.clockOut === null && record.date < today,
+					).length,
 					absent: issues.filter((issue) => issue.type === "absent").length,
 					leaveDays,
 					balanceRemaining,

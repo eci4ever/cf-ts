@@ -131,7 +131,8 @@ function ReportsPage() {
 		getCoreRowModel: getCoreRowModel(),
 	});
 
-	const canExport = data?.scope === "all";
+	const canExport =
+		data?.scope === "all" || data?.scope === "subordinates";
 
 	function downloadCsv() {
 		if (!data) {
