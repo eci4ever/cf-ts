@@ -180,7 +180,12 @@ async function resolveGeofenceContext(
 			radiusM: workSite.radiusM,
 		})
 		.from(workSite)
-		.where(eq(workSite.id, employeeSiteId))
+		.where(
+			and(
+				eq(workSite.id, employeeSiteId),
+				eq(workSite.organizationId, orgId),
+			),
+		)
 		.limit(1);
 	if (!site) {
 		return {
@@ -245,6 +250,18 @@ export const getTodayAttendance = createServerFn({ method: "GET" }).handler(
 			}
 			geofence = await resolveGeofenceContext(org.id, linked.siteId);
 		}
+		const sites = linked
+			? await getDb()
+					.select({
+						id: workSite.id,
+						name: workSite.name,
+						lat: workSite.lat,
+						lng: workSite.lng,
+					})
+					.from(workSite)
+					.where(eq(workSite.organizationId, org.id))
+					.orderBy(workSite.createdAt)
+			: [];
 		return {
 			schedule,
 			employee: linked
@@ -254,13 +271,23 @@ export const getTodayAttendance = createServerFn({ method: "GET" }).handler(
 			record,
 			targetClockOut,
 			geofence,
+			sites,
+			assignedSiteId: linked?.siteId ?? null,
 		};
 	},
 );
 
 export const clockIn = createServerFn({ method: "POST" })
 	.validator(
-		(input: { latitude?: number; longitude?: number } | undefined) => input,
+		(input:
+			| {
+					latitude?: number;
+					longitude?: number;
+					accuracy?: number | null;
+					siteId?: string;
+					note?: string;
+			  }
+			| undefined) => input,
 	)
 	.handler(async ({ data }) => {
 		const { org, schedule, employee: linked } = await getOrgAndEmployee();
@@ -286,17 +313,22 @@ export const clockIn = createServerFn({ method: "POST" })
 			};
 		}
 
-		const geofence = await resolveGeofenceContext(org.id, linked.siteId);
+		const geofence = await resolveGeofenceContext(
+			org.id,
+			data?.siteId ?? linked.siteId,
+		);
 		let location: {
 			siteId: string | null;
 			lat: number | null;
 			lng: number | null;
+			accuracyM: number | null;
 			distanceM: number | null;
 			locationStatus: string | null;
 		} = {
 			siteId: null,
 			lat: null,
 			lng: null,
+			accuracyM: null,
 			distanceM: null,
 			locationStatus: null,
 		};
@@ -324,12 +356,17 @@ export const clockIn = createServerFn({ method: "POST" })
 				siteId: site.id,
 				lat: latitude,
 				lng: longitude,
+				accuracyM:
+					typeof data?.accuracy === "number" && Number.isFinite(data.accuracy)
+						? data.accuracy
+						: null,
 				distanceM: distance,
 				locationStatus: distance <= site.radiusM ? "inside" : "outside",
 			};
 		}
 
 		const status = computeClockInStatus(now, schedule, linked.shift as Shift);
+		const note = data?.note?.trim() || null;
 		const [record] = await getDb()
 			.insert(attendance)
 			.values({
@@ -344,9 +381,10 @@ export const clockIn = createServerFn({ method: "POST" })
 				siteId: location.siteId,
 				lat: location.lat,
 				lng: location.lng,
+				accuracyM: location.accuracyM,
 				distanceM: location.distanceM,
 				locationStatus: location.locationStatus,
-				note: null,
+				note,
 				createdAt: now,
 				updatedAt: now,
 			})
@@ -378,7 +416,14 @@ export const clockIn = createServerFn({ method: "POST" })
 
 export const clockOut = createServerFn({ method: "POST" })
 	.validator(
-		(input: { latitude?: number; longitude?: number } | undefined) => input,
+		(input:
+			| {
+					latitude?: number;
+					longitude?: number;
+					accuracy?: number | null;
+					note?: string;
+			  }
+			| undefined) => input,
 	)
 	.handler(async ({ data }) => {
 		const { org, schedule, employee: linked } = await getOrgAndEmployee();
@@ -407,15 +452,21 @@ export const clockOut = createServerFn({ method: "POST" })
 			};
 		}
 
-		const geofence = await resolveGeofenceContext(org.id, linked.siteId);
+		// measure against the site used at clock-in (may differ from assigned)
+		const geofence = await resolveGeofenceContext(
+			org.id,
+			record.siteId ?? linked.siteId,
+		);
 		let location: {
 			lat: number | null;
 			lng: number | null;
+			accuracyM: number | null;
 			distanceM: number | null;
 			locationStatus: string | null;
 		} = {
 			lat: null,
 			lng: null,
+			accuracyM: null,
 			distanceM: null,
 			locationStatus: null,
 		};
@@ -442,6 +493,10 @@ export const clockOut = createServerFn({ method: "POST" })
 			location = {
 				lat: latitude,
 				lng: longitude,
+				accuracyM:
+					typeof data?.accuracy === "number" && Number.isFinite(data.accuracy)
+						? data.accuracy
+						: null,
 				distanceM: distance,
 				locationStatus: distance <= site.radiusM ? "inside" : "outside",
 			};
@@ -460,8 +515,10 @@ export const clockOut = createServerFn({ method: "POST" })
 				clockOutStatus: status,
 				clockOutLat: location.lat,
 				clockOutLng: location.lng,
+				clockOutAccuracyM: location.accuracyM,
 				clockOutDistanceM: location.distanceM,
 				clockOutLocationStatus: location.locationStatus,
+				clockOutNote: data?.note?.trim() || null,
 				updatedAt: now,
 			})
 			.where(eq(attendance.id, record.id));
@@ -514,7 +571,11 @@ export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
 				clockOut: attendance.clockOut,
 				clockOutStatus: attendance.clockOutStatus,
 				locationStatus: attendance.locationStatus,
+				accuracyM: attendance.accuracyM,
+				note: attendance.note,
 				clockOutLocationStatus: attendance.clockOutLocationStatus,
+				clockOutAccuracyM: attendance.clockOutAccuracyM,
+				clockOutNote: attendance.clockOutNote,
 			})
 			.from(attendance)
 			.where(
@@ -575,6 +636,19 @@ export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
 				getZonedParts(timestamp, schedule.timezone).minutesSinceMidnight,
 			);
 		};
+		type RecordRow = (typeof records)[number];
+		const detailFromRecord = (record: RecordRow | undefined) => ({
+			clockIn: formatClockTime(record?.clockIn ?? null),
+			clockInStatus: record?.clockInStatus ?? null,
+			clockOut: formatClockTime(record?.clockOut ?? null),
+			clockOutStatus: record?.clockOutStatus ?? null,
+			locationStatus: record?.locationStatus ?? null,
+			accuracyM: record?.accuracyM ?? null,
+			note: record?.note ?? null,
+			clockOutLocationStatus: record?.clockOutLocationStatus ?? null,
+			clockOutAccuracyM: record?.clockOutAccuracyM ?? null,
+			clockOutNote: record?.clockOutNote ?? null,
+		});
 		const days: {
 			date: string;
 			status: string;
@@ -583,7 +657,11 @@ export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
 			clockOut: string | null;
 			clockOutStatus: string | null;
 			locationStatus: string | null;
+			accuracyM: number | null;
+			note: string | null;
 			clockOutLocationStatus: string | null;
+			clockOutAccuracyM: number | null;
+			clockOutNote: string | null;
 			issueTypes: string[];
 		}[] = [];
 		for (
@@ -597,12 +675,7 @@ export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
 				days.push({
 					date,
 					status: "off",
-					clockIn: null,
-					clockInStatus: null,
-					clockOut: null,
-					clockOutStatus: null,
-					locationStatus: null,
-					clockOutLocationStatus: null,
+					...detailFromRecord(undefined),
 					issueTypes: [],
 				});
 				continue;
@@ -612,12 +685,7 @@ export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
 				days.push({
 					date,
 					status: holidayRecord ? "present" : "holiday",
-					clockIn: formatClockTime(holidayRecord?.clockIn ?? null),
-					clockInStatus: holidayRecord?.clockInStatus ?? null,
-					clockOut: formatClockTime(holidayRecord?.clockOut ?? null),
-					clockOutStatus: holidayRecord?.clockOutStatus ?? null,
-					locationStatus: holidayRecord?.locationStatus ?? null,
-					clockOutLocationStatus: holidayRecord?.clockOutLocationStatus ?? null,
+					...detailFromRecord(holidayRecord),
 					issueTypes: [],
 				});
 				continue;
@@ -626,12 +694,7 @@ export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
 				days.push({
 					date,
 					status: "leave",
-					clockIn: null,
-					clockInStatus: null,
-					clockOut: null,
-					clockOutStatus: null,
-					locationStatus: null,
-					clockOutLocationStatus: null,
+					...detailFromRecord(undefined),
 					issueTypes: [],
 				});
 				continue;
@@ -643,24 +706,14 @@ export const getMyAttendanceHeatmap = createServerFn({ method: "GET" }).handler(
 				days.push({
 					date,
 					status: hasIssue ? "issue" : "present",
-					clockIn: formatClockTime(record.clockIn),
-					clockInStatus: record.clockInStatus,
-					clockOut: formatClockTime(record.clockOut),
-					clockOutStatus: record.clockOutStatus,
-					locationStatus: record.locationStatus,
-					clockOutLocationStatus: record.clockOutLocationStatus,
+					...detailFromRecord(record),
 					issueTypes: dayIssues ?? [],
 				});
 				continue;
 			}
 			const bare = {
 				date,
-				clockIn: null,
-				clockInStatus: null,
-				clockOut: null,
-				clockOutStatus: null,
-				locationStatus: null,
-				clockOutLocationStatus: null,
+				...detailFromRecord(undefined),
 				issueTypes: dayIssues ?? [],
 			};
 			if (date === today) {
@@ -1058,8 +1111,25 @@ export const listMyIssues = createServerFn({ method: "GET" }).handler(
 			timezone: context.org.timezone,
 		});
 		return getDb()
-			.select()
+			.select({
+				id: attendanceIssue.id,
+				employeeId: attendanceIssue.employeeId,
+				date: attendanceIssue.date,
+				type: attendanceIssue.type,
+				justification: attendanceIssue.justification,
+				status: attendanceIssue.status,
+				reviewNote: attendanceIssue.reviewNote,
+				clockInNote: attendance.note,
+				clockOutNote: attendance.clockOutNote,
+			})
 			.from(attendanceIssue)
+			.leftJoin(
+				attendance,
+				and(
+					eq(attendance.employeeId, attendanceIssue.employeeId),
+					eq(attendance.date, attendanceIssue.date),
+				),
+			)
 			.where(eq(attendanceIssue.employeeId, context.employee.id))
 			.orderBy(desc(attendanceIssue.date));
 	},

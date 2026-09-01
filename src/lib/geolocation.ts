@@ -1,6 +1,7 @@
 export function getPosition(): Promise<{
 	latitude: number;
 	longitude: number;
+	accuracy: number | null;
 }> {
 	return new Promise((resolve, reject) => {
 		if (!navigator.geolocation) {
@@ -12,6 +13,10 @@ export function getPosition(): Promise<{
 				resolve({
 					latitude: position.coords.latitude,
 					longitude: position.coords.longitude,
+					accuracy:
+						typeof position.coords.accuracy === "number"
+							? position.coords.accuracy
+							: null,
 				}),
 			(error) => reject(new Error(error.message || "Failed to get location")),
 			{ enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 },

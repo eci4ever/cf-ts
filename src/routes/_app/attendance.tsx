@@ -93,13 +93,16 @@ type AttendanceRecord = {
 	siteId: string | null;
 	lat: number | null;
 	lng: number | null;
+	accuracyM?: number | null;
 	distanceM: number | null;
 	locationStatus: string | null;
 	clockOutLat: number | null;
 	clockOutLng: number | null;
+	clockOutAccuracyM?: number | null;
 	clockOutDistanceM: number | null;
 	clockOutLocationStatus: string | null;
 	note: string | null;
+	clockOutNote?: string | null;
 };
 
 type TodayData = {
@@ -432,7 +435,15 @@ function LocationCell({ record }: { record: AttendanceRecord | null }) {
 					out {record.distanceM !== null ? `${record.distanceM}m` : ""}
 				</Badge>
 			) : record.locationStatus === "manual" ? null : (
-				<Badge key="in" variant="secondary">
+				<Badge
+					key="in"
+					variant="secondary"
+					title={
+						record.accuracyM !== null && record.accuracyM !== undefined
+							? `GPS accuracy ±${record.accuracyM}m`
+							: undefined
+					}
+				>
 					inside
 				</Badge>
 			),
@@ -448,7 +459,16 @@ function LocationCell({ record }: { record: AttendanceRecord | null }) {
 						: ""}
 				</Badge>
 			) : (
-				<Badge key="out" variant="secondary">
+				<Badge
+					key="out"
+					variant="secondary"
+					title={
+						record.clockOutAccuracyM !== null &&
+						record.clockOutAccuracyM !== undefined
+							? `GPS accuracy ±${record.clockOutAccuracyM}m`
+							: undefined
+					}
+				>
 					inside
 				</Badge>
 			),
@@ -738,6 +758,8 @@ type IssueRow = {
 	reviewNote?: string | null;
 	reviewerName?: string | null;
 	verifiedAt?: Date | string | null;
+	clockInNote?: string | null;
+	clockOutNote?: string | null;
 };
 
 function IssueTypeBadge({ type }: { type: string }) {
@@ -1152,7 +1174,12 @@ function JustificationDialog({
 
 	useEffect(() => {
 		if (issue) {
-			setText(issue.justification ?? "");
+			setText(
+				issue.justification ??
+					issue.clockInNote ??
+					issue.clockOutNote ??
+					"",
+			);
 		}
 	}, [issue]);
 

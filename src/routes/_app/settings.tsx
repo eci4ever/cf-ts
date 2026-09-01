@@ -907,18 +907,33 @@ function SiteEditor({ site, onSaved }: { site: SiteRow; onSaved: () => void }) {
 	}
 
 	if (!editing) {
+		const unconfigured = site.lat === null || site.lng === null;
 		return (
-			<div className="flex items-center justify-between gap-2 rounded-lg border p-3">
+			<div
+				className={`flex items-center justify-between gap-2 rounded-lg border p-3 ${
+					unconfigured ? "border-amber-400 bg-amber-50 dark:bg-amber-950/30" : ""
+				}`}
+			>
 				<div className="min-w-0">
-					<p className="text-sm font-medium">{site.name}</p>
-					<p className="text-xs text-muted-foreground">
+					<p className="flex items-center gap-2 text-sm font-medium">
+						{site.name}
+						{unconfigured ? (
+							<span className="flex items-center gap-1 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
+								<AlertTriangle className="size-3" />
+								Setup needed
+							</span>
+						) : null}
+					</p>
+					<p
+						className={`text-xs ${unconfigured ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"}`}
+					>
 						{site.lat === null || site.lng === null
-							? "Coordinates not set — employees of this site cannot clock in"
+							? "Coordinates not set — employees of this site cannot clock in. Edit and use your current location."
 							: `${site.lat.toFixed(5)}, ${site.lng.toFixed(5)} · ${site.radiusM}m`}
 					</p>
 				</div>
 				<Button
-					variant="ghost"
+					variant={unconfigured ? "default" : "ghost"}
 					size="sm"
 					onClick={() => {
 						setName(site.name);
@@ -928,7 +943,7 @@ function SiteEditor({ site, onSaved }: { site: SiteRow; onSaved: () => void }) {
 						setEditing(true);
 					}}
 				>
-					Edit
+					{unconfigured ? "Set location" : "Edit"}
 				</Button>
 			</div>
 		);

@@ -12,7 +12,11 @@ type HeatDay = {
 	clockOut: string | null;
 	clockOutStatus: string | null;
 	locationStatus: string | null;
+	accuracyM: number | null;
+	note: string | null;
 	clockOutLocationStatus: string | null;
+	clockOutAccuracyM: number | null;
+	clockOutNote: string | null;
 	issueTypes: string[];
 };
 
@@ -69,7 +73,13 @@ function formatDayLabel(dateKey: string): string {
 	});
 }
 
-function LocationBadge({ status }: { status: string | null }) {
+function LocationBadge({
+	status,
+	accuracyM,
+}: {
+	status: string | null;
+	accuracyM?: number | null;
+}) {
 	if (!status) {
 		return null;
 	}
@@ -80,8 +90,10 @@ function LocationBadge({ status }: { status: string | null }) {
 					? "bg-destructive/10 text-destructive"
 					: "bg-muted text-muted-foreground"
 			}`}
+			title={accuracyM ? `GPS accuracy ±${Math.round(accuracyM)}m` : undefined}
 		>
 			{LOCATION_LABEL[status] ?? status}
+			{accuracyM ? ` ±${Math.round(accuracyM)}m` : ""}
 		</span>
 	);
 }
@@ -118,7 +130,10 @@ function DayDetailPopover({
 										{CLOCK_IN_LABEL[day.clockInStatus] ?? day.clockInStatus}
 									</span>
 								)}
-								<LocationBadge status={day.locationStatus} />
+								<LocationBadge
+									status={day.locationStatus}
+									accuracyM={day.accuracyM}
+								/>
 							</div>
 						)}
 						{day.clockOut && (
@@ -136,10 +151,21 @@ function DayDetailPopover({
 										{CLOCK_OUT_LABEL[day.clockOutStatus] ?? day.clockOutStatus}
 									</span>
 								)}
-								<LocationBadge status={day.clockOutLocationStatus} />
+								<LocationBadge
+									status={day.clockOutLocationStatus}
+									accuracyM={day.clockOutAccuracyM}
+								/>
 							</div>
 						)}
 					</div>
+				) : null}
+				{day.note ? (
+					<p className="mt-2 text-muted-foreground">Note: {day.note}</p>
+				) : null}
+				{day.clockOutNote ? (
+					<p className="mt-1 text-muted-foreground">
+						Clock-out note: {day.clockOutNote}
+					</p>
 				) : null}
 				{day.issueTypes.length > 0 && (
 					<p className="mt-2 text-destructive">

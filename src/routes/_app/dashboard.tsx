@@ -12,6 +12,7 @@ import {
 	Users,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -22,7 +23,16 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/components/ui/card";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "#/components/ui/dialog";
 import { Skeleton } from "#/components/ui/skeleton";
+import { Textarea } from "#/components/ui/textarea";
 import {
 	clockIn,
 	clockOut,
@@ -253,6 +263,49 @@ function AttendanceTrendCard({
 	);
 }
 
+type ClockCoords = {
+	latitude: number;
+	longitude: number;
+	accuracy: number | null;
+};
+
+type NotePrompt = {
+	action: "in" | "out";
+	reasons: string[];
+	coords?: ClockCoords;
+	siteId?: string;
+};
+
+function minutesSinceMidnight(timezone: string): number {
+	const parts = new Intl.DateTimeFormat("en-US", {
+		timeZone: timezone,
+		hour12: false,
+		hour: "2-digit",
+		minute: "2-digit",
+	}).formatToParts(new Date());
+	const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+	const minute = Number(
+		parts.find((part) => part.type === "minute")?.value ?? 0,
+	);
+	return (hour % 24) * 60 + minute;
+}
+
+function haversineMeters(
+	lat1: number,
+	lng1: number,
+	lat2: number,
+	lng2: number,
+): number {
+	const R = 6_371_000;
+	const toRad = (deg: number) => (deg * Math.PI) / 180;
+	const dLat = toRad(lat2 - lat1);
+	const dLng = toRad(lng2 - lng1);
+	const a =
+		Math.sin(dLat / 2) ** 2 +
+		Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+	return Math.round(2 * R * Math.asin(Math.sqrt(a)));
+}
+
 function ClockWidget({
 	todayQuery,
 }: {
@@ -261,24 +314,54 @@ function ClockWidget({
 	>;
 }) {
 	const queryClient = useQueryClient();
+	const [selectedSiteId, setSelectedSiteId] = useState<string>("");
+	const [notePrompt, setNotePrompt] = useState<NotePrompt | null>(null);
+	const [noteText, setNoteText] = useState("");
+
+	const today = todayQuery.data;
+	const configuredSites = (today?.sites ?? []).filter(
+		(site) => site.lat !== null && site.lng !== null,
+	);
+
+	useEffect(() => {
+		if (!selectedSiteId && configuredSites.length > 0) {
+			setSelectedSiteId(
+				today?.assignedSiteId &&
+					configuredSites.some((site) => site.id === today.assignedSiteId)
+					? today.assignedSiteId
+					: configuredSites[0].id,
+			);
+		}
+	}, [configuredSites, selectedSiteId, today]);
+
 	const clockMutation = useMutation({
-		mutationFn: async (action: "in" | "out") => {
+		mutationFn: async (input: {
+			action: "in" | "out";
+			coords?: ClockCoords;
+			siteId?: string;
+			note?: string;
+		}) => {
 			const geofence = todayQuery.data?.geofence;
-			let coords: { latitude: number; longitude: number } | undefined;
-			if (geofence?.geofenceEnabled) {
-				if (geofence.blockedReason) {
-					throw new Error(geofence.blockedReason);
-				}
-				coords = await getPosition();
+			if (geofence?.geofenceEnabled && geofence.blockedReason) {
+				throw new Error(geofence.blockedReason);
 			}
+			const payload = input.coords
+				? {
+						latitude: input.coords.latitude,
+						longitude: input.coords.longitude,
+						accuracy: input.coords.accuracy,
+						siteId: input.siteId,
+						note: input.note,
+					}
+				: { note: input.note };
 			const result =
-				action === "in"
-					? await clockIn({ data: coords })
-					: await clockOut({ data: coords });
+				input.action === "in"
+					? await clockIn({ data: payload })
+					: await clockOut({ data: payload });
 			if (!result.ok) {
 				throw new Error(result.reason);
 			}
-			return { action, result };
+			return { action: input.action, result };
 		},
 		onSuccess: ({ action, result }) => {
 			if (action === "in") {
@@ -299,10 +382,96 @@ function ClockWidget({
 			toast.error(error.message);
 		},
 	});
-	if (todayQuery.isError || !todayQuery.data) {
+
+	function predictIssues(
+		action: "in" | "out",
+		data: NonNullable<typeof todayQuery.data>,
+		coords?: ClockCoords,
+	): string[] {
+		const reasons: string[] = [];
+		const geofence = data.geofence;
+		if (action === "in") {
+			const threshold =
+				data.schedule.workStartMinutes +
+				(data.employee?.shift === "flexi"
+					? 0
+					: data.schedule.graceMinutes);
+			if (minutesSinceMidnight(data.schedule.timezone) > threshold) {
+				reasons.push("you are clocking in late");
+			}
+		} else if (data.targetClockOut && new Date() < data.targetClockOut) {
+			reasons.push("you are leaving before your target hours");
+		}
+		if (
+			coords &&
+			geofence?.geofenceEnabled &&
+			geofence.site &&
+			!geofence.blockedReason
+		) {
+			const distance = haversineMeters(
+				coords.latitude,
+				coords.longitude,
+				geofence.site.lat,
+				geofence.site.lng,
+			);
+			if (distance > geofence.site.radiusM) {
+				reasons.push(
+					`you are outside the work site radius (~${Math.round(distance)}m away)`,
+				);
+			}
+		}
+		return reasons;
+	}
+
+	async function handleClock(action: "in" | "out") {
+		if (!today) {
+			return;
+		}
+		const geofence = today.geofence;
+		let coords: ClockCoords | undefined;
+		if (geofence?.geofenceEnabled) {
+			if (geofence.blockedReason) {
+				toast.error(geofence.blockedReason);
+				return;
+			}
+			try {
+				coords = await getPosition();
+			} catch (error) {
+				toast.error(
+					error instanceof Error ? error.message : "Failed to get location",
+				);
+				return;
+			}
+		}
+		const siteId =
+			action === "in" && configuredSites.length > 1 && selectedSiteId
+				? selectedSiteId
+				: undefined;
+		const reasons = predictIssues(action, today, coords);
+		if (reasons.length > 0) {
+			setNotePrompt({ action, reasons, coords, siteId });
+			setNoteText("");
+			return;
+		}
+		clockMutation.mutate({ action, coords, siteId });
+	}
+
+	function submitWithNote() {
+		if (!notePrompt) {
+			return;
+		}
+		clockMutation.mutate({
+			action: notePrompt.action,
+			coords: notePrompt.coords,
+			siteId: notePrompt.siteId,
+			note: noteText,
+		});
+		setNotePrompt(null);
+	}
+
+	if (todayQuery.isError || !today) {
 		return null;
 	}
-	const today = todayQuery.data;
 	const employee = today.employee;
 	if (!employee) {
 		return null;
@@ -322,56 +491,133 @@ function ClockWidget({
 					{formatMinutes(today.schedule.workEndMinutes)}
 				</CardDescription>
 			</CardHeader>
-			<CardContent className="flex flex-wrap items-center gap-4">
-				{record ? (
-					<>
-						<div>
-							<p className="text-xs text-muted-foreground">Clock in</p>
-							<p className="flex items-center gap-2 text-lg font-semibold">
-								{new Date(record.clockIn).toLocaleTimeString()}
-								<ClockInBadge status={record.clockInStatus} />
-							</p>
-						</div>
-						<div>
-							<p className="text-xs text-muted-foreground">Clock out</p>
-							<p className="flex items-center gap-2 text-lg font-semibold">
-								{record.clockOut
-									? new Date(record.clockOut).toLocaleTimeString()
-									: "—"}
-								{record.clockOutStatus ? (
-									<ClockOutBadge status={record.clockOutStatus} />
-								) : null}
-							</p>
-						</div>
-						{isClockedIn && today.targetClockOut ? (
-							<p className="text-sm text-muted-foreground">
-								Target clock out: {today.targetClockOut.toLocaleTimeString()}
-							</p>
+			<CardContent className="flex flex-col gap-4">
+				<div className="flex flex-wrap items-center gap-4">
+					{record ? (
+						<>
+							<div>
+								<p className="text-xs text-muted-foreground">Clock in</p>
+								<p className="flex items-center gap-2 text-lg font-semibold">
+									{new Date(record.clockIn).toLocaleTimeString()}
+									<ClockInBadge status={record.clockInStatus} />
+								</p>
+							</div>
+							<div>
+								<p className="text-xs text-muted-foreground">Clock out</p>
+								<p className="flex items-center gap-2 text-lg font-semibold">
+									{record.clockOut
+										? new Date(record.clockOut).toLocaleTimeString()
+										: "—"}
+									{record.clockOutStatus ? (
+										<ClockOutBadge status={record.clockOutStatus} />
+									) : null}
+								</p>
+							</div>
+							{isClockedIn && today.targetClockOut ? (
+								<p className="text-sm text-muted-foreground">
+									Target clock out: {today.targetClockOut.toLocaleTimeString()}
+								</p>
+							) : null}
+						</>
+					) : (
+						<p className="text-sm text-muted-foreground">
+							You have not clocked in today.
+						</p>
+					)}
+					<div className="ml-auto flex flex-wrap items-center gap-2">
+						{!record && configuredSites.length > 1 ? (
+							<select
+								aria-label="Work site"
+								value={selectedSiteId}
+								onChange={(event) => setSelectedSiteId(event.target.value)}
+								className="h-9 rounded-md border bg-background px-3 text-sm"
+							>
+								{configuredSites.map((site) => (
+									<option key={site.id} value={site.id}>
+										{site.name}
+										{site.id === today.assignedSiteId ? " (assigned)" : ""}
+									</option>
+								))}
+							</select>
 						) : null}
-					</>
-				) : (
-					<p className="text-sm text-muted-foreground">
-						You have not clocked in today.
-					</p>
-				)}
-				<div className="ml-auto flex gap-2">
-					<Button
-						onClick={() => clockMutation.mutate("in")}
-						disabled={clockMutation.isPending || record !== null}
-					>
-						<LogIn />
-						{clockMutation.isPending ? "…" : "Clock in"}
-					</Button>
-					<Button
-						variant="outline"
-						onClick={() => clockMutation.mutate("out")}
-						disabled={clockMutation.isPending || !isClockedIn}
-					>
-						<LogOut />
-						Clock out
-					</Button>
+						<Button
+							onClick={() => handleClock("in")}
+							disabled={clockMutation.isPending || record !== null}
+						>
+							<LogIn />
+							{clockMutation.isPending ? "…" : "Clock in"}
+						</Button>
+						<Button
+							variant="outline"
+							onClick={() => handleClock("out")}
+							disabled={clockMutation.isPending || !isClockedIn}
+						>
+							<LogOut />
+							Clock out
+						</Button>
+					</div>
 				</div>
+				{record?.note ? (
+					<p className="text-xs text-muted-foreground">
+						Your clock-in note: {record.note}
+					</p>
+				) : null}
+				{record?.clockOutNote ? (
+					<p className="text-xs text-muted-foreground">
+						Your clock-out note: {record.clockOutNote}
+					</p>
+				) : null}
 			</CardContent>
+			<Dialog
+				open={notePrompt !== null}
+				onOpenChange={(open) => {
+					if (!open) {
+						setNotePrompt(null);
+					}
+				}}
+			>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>
+							{notePrompt?.action === "in"
+								? "Issue detected — clock in"
+								: "Issue detected — clock out"}
+						</DialogTitle>
+						<DialogDescription>
+							Just a heads-up: {notePrompt?.reasons.join(" and ")}. You can add
+							a short note so your supervisor understands the situation.
+						</DialogDescription>
+					</DialogHeader>
+					<Textarea
+						value={noteText}
+						onChange={(event) => setNoteText(event.target.value)}
+						placeholder="e.g. Bus was late, left my phone charger at the outlet…"
+						maxLength={300}
+					/>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setNotePrompt(null)}>
+							Cancel
+						</Button>
+						<Button variant="outline" onClick={submitWithNote}>
+							Submit with note
+						</Button>
+						<Button
+							onClick={() => {
+								if (notePrompt) {
+									clockMutation.mutate({
+										action: notePrompt.action,
+										coords: notePrompt.coords,
+										siteId: notePrompt.siteId,
+									});
+								}
+								setNotePrompt(null);
+							}}
+						>
+							Clock without note
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</Card>
 	);
 }
