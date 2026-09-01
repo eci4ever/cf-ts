@@ -29,7 +29,7 @@ import {
 	getTodayAttendance,
 } from "#/lib/attendance.functions";
 import { authClient } from "#/lib/auth-client";
-import { getOrgDashboardStats } from "#/lib/dashboard.functions";
+import { getOrgAttendanceTrend, getOrgDashboardStats } from "#/lib/dashboard.functions";
 import { getPosition } from "#/lib/geolocation";
 import { getLeaveOverview } from "#/lib/leave.functions";
 import { formatMinutes } from "#/lib/schedule";
@@ -49,6 +49,11 @@ function DashboardPage() {
 	const statsQuery = useQuery({
 		queryKey: ["dashboard", "stats"],
 		queryFn: getOrgDashboardStats,
+		enabled: isOrgViewer,
+	});
+	const trendQuery = useQuery({
+		queryKey: ["dashboard", "trend"],
+		queryFn: getOrgAttendanceTrend,
 		enabled: isOrgViewer,
 	});
 	const todayQuery = useQuery({
@@ -89,6 +94,7 @@ function DashboardPage() {
 			</div>
 
 			{isOrgViewer ? <OrgStatsRow statsQuery={statsQuery} /> : null}
+			{isOrgViewer ? <AttendanceTrendCard trendQuery={trendQuery} /> : null}
 			<ClockWidget todayQuery={todayQuery} />
 
 			<div className="grid gap-4 lg:grid-cols-2">
@@ -173,6 +179,77 @@ function OrgStatsRow({
 				to="/employees"
 			/>
 		</div>
+	);
+}
+
+function AttendanceTrendCard({
+	trendQuery,
+}: {
+	trendQuery: ReturnType<
+		typeof useQuery<Awaited<ReturnType<typeof getOrgAttendanceTrend>>>
+	>;
+}) {
+	if (trendQuery.isPending) {
+		return (
+			<Card>
+				<CardHeader>
+					<CardTitle>Attendance trend</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<Skeleton className="h-24 w-full" />
+				</CardContent>
+			</Card>
+		);
+	}
+	const weeks = trendQuery.data?.weeks ?? [];
+	if (trendQuery.isError || weeks.length === 0) {
+		return null;
+	}
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Attendance trend</CardTitle>
+				<CardDescription>
+					Present rate vs expected working days, excluding approved leave. Last{" "}
+					{weeks.length} weeks.
+				</CardDescription>
+			</CardHeader>
+			<CardContent>
+				<div className="flex items-end gap-2">
+					{weeks.map((week) => {
+						const height =
+							week.rate === null ? 0 : Math.max(Math.min(week.rate, 100), 4);
+						return (
+							<div
+								key={week.weekStart}
+								className="flex min-w-0 flex-1 flex-col items-center gap-1"
+							>
+								<span className="text-[10px] tabular-nums text-muted-foreground">
+									{week.rate === null ? "—" : `${week.rate}%`}
+								</span>
+								<div className="flex h-24 w-full items-end rounded bg-muted/40">
+									<div
+										className="w-full rounded bg-primary/80"
+										style={{ height: `${height}%` }}
+									/>
+								</div>
+								<span className="text-[10px] tabular-nums text-muted-foreground">
+									{new Date(`${week.weekStart}T00:00:00Z`).toLocaleDateString(
+										"en-US",
+										{ day: "numeric", month: "short", timeZone: "UTC" },
+									)}
+								</span>
+								<span
+									className={`text-[10px] tabular-nums ${week.late > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}
+								>
+									{week.late} late
+								</span>
+							</div>
+						);
+					})}
+				</div>
+			</CardContent>
+		</Card>
 	);
 }
 
