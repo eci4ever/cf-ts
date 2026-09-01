@@ -191,19 +191,33 @@ async function usedDaysForYear(
 	employeeId: string,
 	leaveTypeId: string,
 	year: string,
+	workDays: number[],
 ): Promise<number> {
-	const [row] = await getDb()
-		.select({ total: sql<number>`coalesce(sum(${leaveRequest.days}), 0)` })
+	const rows = await getDb()
+		.select({
+			startDate: leaveRequest.startDate,
+			endDate: leaveRequest.endDate,
+		})
 		.from(leaveRequest)
 		.where(
 			and(
 				eq(leaveRequest.employeeId, employeeId),
 				eq(leaveRequest.leaveTypeId, leaveTypeId),
 				inArray(leaveRequest.status, ["pending", "approved"]),
-				sql`substr(${leaveRequest.startDate}, 1, 4) = ${year}`,
 			),
 		);
-	return Number(row?.total ?? 0);
+	const yearStart = `${year}-01-01`;
+	const yearEnd = `${year}-12-31`;
+	let total = 0;
+	for (const row of rows) {
+		const start = row.startDate > yearStart ? row.startDate : yearStart;
+		const end = row.endDate < yearEnd ? row.endDate : yearEnd;
+		if (start > end) {
+			continue;
+		}
+		total += countWorkingDays(start, end, workDays);
+	}
+	return total;
 }
 
 function todayKey(timezone: string): string {
@@ -269,13 +283,49 @@ async function validateAndQuote(options: {
 		}
 	}
 	if (type.quotaDays !== null) {
-		const year = startDate.slice(0, 4);
-		const used = await usedDaysForYear(employeeId, leaveTypeId, year);
-		if (used + days > type.quotaDays) {
-			return {
-				ok: false,
-				reason: `Insufficient balance — ${used} of ${type.quotaDays} days used this year`,
-			};
+		const startYear = Number(startDate.slice(0, 4));
+		const endYear = Number(endDate.slice(0, 4));
+		const parts: {
+			year: string;
+			portion: number;
+			used: number;
+			remaining: number;
+		}[] = [];
+		let overdrawn: string | null = null;
+		for (let year = startYear; year <= endYear; year += 1) {
+			const yearKey = String(year);
+			const yearStart = `${yearKey}-01-01`;
+			const yearEnd = `${yearKey}-12-31`;
+			const portion = countWorkingDays(
+				startDate > yearStart ? startDate : yearStart,
+				endDate < yearEnd ? endDate : yearEnd,
+				workDays,
+			);
+			if (portion <= 0) {
+				continue;
+			}
+			const used = await usedDaysForYear(
+				employeeId,
+				leaveTypeId,
+				yearKey,
+				workDays,
+			);
+			parts.push({ year: yearKey, portion, used, remaining: type.quotaDays - used });
+			if (portion > type.quotaDays - used) {
+				overdrawn = yearKey;
+			}
+		}
+		if (overdrawn) {
+			const reason =
+				parts.length === 1
+					? `Insufficient balance — ${parts[0].used} of ${type.quotaDays} days used in ${overdrawn}`
+					: `Insufficient balance — ${parts
+							.map(
+								(part) =>
+									`${part.year}: needs ${part.portion}, ${Math.max(part.remaining, 0)} remaining`,
+							)
+							.join("; ")}`;
+			return { ok: false, reason };
 		}
 	}
 	return { ok: true, days };
@@ -291,10 +341,11 @@ export const getLeaveOverview = createServerFn({ method: "GET" }).handler(
 			.where(eq(leaveType.organizationId, context.orgId))
 			.orderBy(leaveType.name);
 		const year = todayKey(context.org.timezone).slice(0, 4);
+		const workDays = context.org.workDays.split(",").map(Number);
 		const balances = [];
 		for (const type of types) {
 			const used = context.employee
-				? await usedDaysForYear(context.employee.id, type.id, year)
+				? await usedDaysForYear(context.employee.id, type.id, year, workDays)
 				: 0;
 			balances.push({
 				id: type.id,
