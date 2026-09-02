@@ -115,6 +115,7 @@ function SettingsPage() {
 			<GeneralCard
 				name={settings.name}
 				slug={settings.slug}
+				logo={settings.logo}
 				onSaved={() => queryClient.invalidateQueries({ queryKey: ["org"] })}
 			/>
 			<ScheduleCard
@@ -533,16 +534,19 @@ function EmailNotificationsCard({
 function GeneralCard({
 	name,
 	slug,
+	logo,
 	onSaved,
 }: {
 	name: string;
 	slug: string;
+	logo: string | null;
 	onSaved: () => void;
 }) {
 	const queryClient = useQueryClient();
 	const [value, setValue] = useState(name);
+	const [logoUrl, setLogoUrl] = useState(logo ?? "");
 	const nameMutation = useMutation({
-		mutationFn: async (input: { name: string }) => {
+		mutationFn: async (input: { name: string; logo: string | null }) => {
 			const result = await updateOrgName({ data: input });
 			if (!result.ok) {
 				throw new Error(result.reason);
@@ -550,7 +554,7 @@ function GeneralCard({
 			return result;
 		},
 		onSuccess: () => {
-			toast.success("Organization name updated");
+			toast.success("Organization profile updated");
 			queryClient.invalidateQueries({ queryKey: ["org"] });
 			onSaved();
 		},
@@ -561,11 +565,12 @@ function GeneralCard({
 
 	useEffect(() => {
 		setValue(name);
-	}, [name]);
+		setLogoUrl(logo ?? "");
+	}, [name, logo]);
 
 	function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		nameMutation.mutate({ name: value });
+		nameMutation.mutate({ name: value, logo: logoUrl.trim() || null });
 	}
 
 	return (
@@ -575,7 +580,9 @@ function GeneralCard({
 					<SettingsIcon />
 					General
 				</CardTitle>
-				<CardDescription>Organization identity details</CardDescription>
+				<CardDescription>
+					Organization identity details. The logo appears on PDF reports.
+				</CardDescription>
 			</CardHeader>
 			<CardContent>
 				<form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -589,6 +596,32 @@ function GeneralCard({
 							minLength={2}
 							maxLength={80}
 						/>
+					</div>
+					<div className="flex flex-col gap-2">
+						<Label htmlFor="org-logo">Logo URL</Label>
+						<div className="flex items-center gap-3">
+							{logoUrl ? (
+								<img
+									src={logoUrl}
+									alt="Organization logo preview"
+									className="size-12 rounded border object-contain"
+									onError={(event) => {
+										event.currentTarget.style.display = "none";
+									}}
+								/>
+							) : null}
+							<Input
+								id="org-logo"
+								type="url"
+								placeholder="https://example.com/logo.png"
+								value={logoUrl}
+								onChange={(event) => setLogoUrl(event.target.value)}
+								className="max-w-md"
+							/>
+						</div>
+						<p className="text-xs text-muted-foreground">
+							PNG or JPG with transparent background works best.
+						</p>
 					</div>
 					<div className="flex flex-col gap-2">
 						<Label>Slug</Label>

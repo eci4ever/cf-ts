@@ -1,10 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { getDb } from "#/db";
-import { attendance, employee, leaveRequest, leaveType } from "#/db/schema";
-import { countWorkingDays, deriveIssues, enumerateDays } from "./leave";
+import {
+	attendance,
+	attendanceIssue,
+	employee,
+	leaveRequest,
+	leaveType,
+} from "#/db/schema";
+import { countWorkingDays, deriveIssues, enumerateDays, weekdayOf } from "./leave";
 import { getHolidayDates } from "./holidays";
-import { formatZonedDate } from "./schedule";
+import { formatMinutes, formatZonedDate, getZonedParts } from "./schedule";
 import { getOrgMemberContext } from "./session";
 
 function pad(value: number): string {
@@ -25,6 +31,7 @@ type ReportRow = {
 	earlyOut: number;
 	missingOut: number;
 	absent: number;
+	issueCount: number;
 	leaveDays: Record<string, number>;
 	balanceRemaining: Record<string, number | null>;
 };
@@ -111,15 +118,40 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 		const holidayDates = await getHolidayDates(context.orgId);
 
 		const rows: ReportRow[] = [];
+		const issuesByEmployee: Record<
+			string,
+			{
+				date: string;
+				type: string;
+				justification: string | null;
+				status: string;
+				reviewNote: string | null;
+			}[]
+		> = {};
+		const dailyByEmployee: Record<
+			string,
+			{
+				date: string;
+				weekday: string;
+				status: string;
+				clockIn: string | null;
+				clockOut: string | null;
+				hours: number | null;
+				note: string | null;
+			}[]
+		> = {};
 		const targetIds = targets.map((row) => row.id);
 		if (targetIds.length > 0) {
 			const records = await getDb()
 				.select({
 					employeeId: attendance.employeeId,
 					date: attendance.date,
+					clockIn: attendance.clockIn,
 					clockInStatus: attendance.clockInStatus,
 					clockOutStatus: attendance.clockOutStatus,
 					clockOut: attendance.clockOut,
+					note: attendance.note,
+					clockOutNote: attendance.clockOutNote,
 				})
 				.from(attendance)
 				.where(
@@ -207,6 +239,37 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 				);
 			}
 
+			const monthIssues = await getDb()
+				.select({
+					employeeId: attendanceIssue.employeeId,
+					date: attendanceIssue.date,
+					type: attendanceIssue.type,
+					justification: attendanceIssue.justification,
+					status: attendanceIssue.status,
+					reviewNote: attendanceIssue.reviewNote,
+				})
+				.from(attendanceIssue)
+				.where(
+					and(
+						inArray(attendanceIssue.employeeId, targetIds),
+						eq(attendanceIssue.organizationId, context.orgId),
+						gte(attendanceIssue.date, monthStart),
+						lte(attendanceIssue.date, monthEnd),
+					),
+				)
+				.orderBy(attendanceIssue.date);
+			for (const issue of monthIssues) {
+				const list = issuesByEmployee[issue.employeeId] ?? [];
+				list.push({
+					date: issue.date,
+					type: issue.type,
+					justification: issue.justification,
+					status: issue.status,
+					reviewNote: issue.reviewNote,
+				});
+				issuesByEmployee[issue.employeeId] = list;
+			}
+
 			for (const target of targets) {
 				const recs = recordsByEmployee.get(target.id) ?? [];
 			const issues = deriveIssues({
@@ -246,9 +309,105 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 						(record) => record.clockOut === null && record.date < today,
 					).length,
 					absent: issues.filter((issue) => issue.type === "absent").length,
+					issueCount: (issuesByEmployee[target.id] ?? []).length,
 					leaveDays,
 					balanceRemaining,
 				});
+
+				const WEEKDAY_LABELS = [
+					"Sun",
+					"Mon",
+					"Tue",
+					"Wed",
+					"Thu",
+					"Fri",
+					"Sat",
+				];
+				const timezone = context.org.timezone;
+				const formatClock = (timestamp: Date | null): string | null =>
+					timestamp === null
+						? null
+						: formatMinutes(
+								getZonedParts(timestamp, timezone).minutesSinceMidnight,
+							);
+				const recordByDate = new Map(recs.map((record) => [record.date, record]));
+				const leaveCovered =
+					leaveCoveredByEmployee.get(target.id) ?? new Set<string>();
+				const daily: {
+					date: string;
+					weekday: string;
+					status: string;
+					clockIn: string | null;
+					clockOut: string | null;
+					hours: number | null;
+					note: string | null;
+				}[] = [];
+				for (const date of enumerateDays(monthStart, monthEnd)) {
+					const base = {
+						date,
+						weekday: WEEKDAY_LABELS[weekdayOf(date)],
+						clockIn: null as string | null,
+						clockOut: null as string | null,
+						hours: null as number | null,
+						note: null as string | null,
+					};
+					const record = recordByDate.get(date);
+					if (!workDays.includes(weekdayOf(date))) {
+						daily.push({ ...base, status: "off" });
+						continue;
+					}
+					if (holidayDates.has(date)) {
+						daily.push({
+							...base,
+							...(record
+								? {
+										clockIn: formatClock(record.clockIn),
+										clockOut: formatClock(record.clockOut),
+										hours:
+											record.clockOut !== null
+												? Math.round(
+														((record.clockOut.getTime() -
+															record.clockIn.getTime()) /
+															360_000) /
+															10,
+													)
+												: null,
+										status: "present",
+									}
+								: { status: "holiday" }),
+						});
+						continue;
+					}
+					if (leaveCovered.has(date)) {
+						daily.push({ ...base, status: "leave" });
+						continue;
+					}
+					if (record) {
+						const notes = [record.note, record.clockOutNote].filter(Boolean);
+						daily.push({
+							...base,
+							status: record.clockInStatus === "late" ? "late" : "present",
+							clockIn: formatClock(record.clockIn),
+							clockOut: formatClock(record.clockOut),
+							hours:
+								record.clockOut !== null
+									? Math.round(
+											((record.clockOut.getTime() - record.clockIn.getTime()) /
+												360_000) /
+												10,
+										)
+									: null,
+							note: notes.length > 0 ? notes.join(" / ") : null,
+						});
+						continue;
+					}
+					if (date >= today) {
+						daily.push({ ...base, status: date === today ? "today" : "upcoming" });
+						continue;
+					}
+					daily.push({ ...base, status: "absent" });
+				}
+				dailyByEmployee[target.id] = daily;
 			}
 		}
 
@@ -258,11 +417,14 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 			year: data.year,
 			balanceYear,
 			orgName: context.org.name,
+			orgLogo: context.org.logo,
 			leaveTypes: types.map((type) => ({
 				id: type.id,
 				name: type.name,
 				quotaDays: type.quotaDays,
 			})),
 			rows,
+			issuesByEmployee,
+			dailyByEmployee,
 		};
 	});

@@ -45,6 +45,7 @@ export const getOrgSettings = createServerFn({ method: "GET" }).handler(
 			.select({
 				name: organization.name,
 				slug: organization.slug,
+				logo: organization.logo,
 				workDays: organization.workDays,
 				workStartMinutes: organization.workStartMinutes,
 				workEndMinutes: organization.workEndMinutes,
@@ -116,6 +117,7 @@ export const getOrgSettings = createServerFn({ method: "GET" }).handler(
 		return {
 			name: org.name,
 			slug: org.slug,
+			logo: org.logo,
 			schedule: {
 				workDays: org.workDays.split(",").map(Number),
 				workStartMinutes: org.workStartMinutes,
@@ -251,16 +253,24 @@ export const updateSchedule = createServerFn({ method: "POST" })
 	});
 
 export const updateOrgName = createServerFn({ method: "POST" })
-	.validator((input: { name: string }) => input)
+	.validator((input: { name: string; logo?: string | null }) => input)
 	.handler(async ({ data }) => {
 		const { orgId } = await requireOrgRole(["owner", "admin"]);
 		const name = data.name.trim();
 		if (name.length < 2 || name.length > 80) {
 			return { ok: false as const, reason: "Name must be 2–80 characters" };
 		}
+		let logo: string | null | undefined;
+		if (data.logo !== undefined) {
+			const trimmed = data.logo?.trim() || null;
+			if (trimmed && !/^https?:\/\//.test(trimmed)) {
+				return { ok: false as const, reason: "Logo must be an http(s) URL" };
+			}
+			logo = trimmed;
+		}
 		await getDb()
 			.update(organization)
-			.set({ name })
+			.set({ name, ...(logo !== undefined ? { logo } : {}) })
 			.where(eq(organization.id, orgId));
 		return { ok: true as const, name };
 	});
