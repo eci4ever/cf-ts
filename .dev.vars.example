@@ -1,1 +1,23 @@
+# Cloudflare Workers local secrets (.dev.vars — gitignored, never commit real values)
+
+# Auth — required. Generate with: openssl rand -base64 32
+BETTER_AUTH_URL=http://localhost:3000
 BETTER_AUTH_SECRET=
+
+# Google OAuth login (optional — button hides when empty)
+# Redirect URIs in Google Cloud Console:
+#   http://localhost:3000/api/auth/callback/google
+#   https://tapme.nimfi.dev/api/auth/callback/google
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# Email via Resend (optional — email sends are skipped when empty)
+# Test domain resend.dev only delivers to your own Resend account;
+# verify a custom domain and set EMAIL_FROM for real recipients.
+RESEND_API_KEY=
+EMAIL_FROM=admin@resend.dev
+
+# Branding (optional)
+EMAIL_BRAND_NAME=TapMe
+EMAIL_REPLY_TO=
+EMAIL_SUPPORT=
