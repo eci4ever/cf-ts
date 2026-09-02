@@ -8,6 +8,7 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import { AuthShell } from "#/components/auth-layout";
+import { GoogleButton } from "#/components/google-sign-in-button";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -120,6 +121,7 @@ function LoginPage() {
 
 	return (
 		<AuthShell title="Welcome back" description="Sign in to your TapMe account">
+			<GoogleButton label="Continue with Google" />
 			<form onSubmit={handleSubmit} className="flex flex-col gap-4">
 				<div className="flex flex-col gap-2">
 					<Label htmlFor="email">Email</Label>

@@ -46,3 +46,12 @@ export const ensureActiveOrg = createServerFn({ method: "GET" }).handler(
 		return { hasOrg: true };
 	},
 );
+
+export const getAuthMethods = createServerFn({ method: "GET" }).handler(
+	async () => {
+		const env = (await import("cloudflare:workers")).env;
+		return {
+			google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
+		};
+	},
+);

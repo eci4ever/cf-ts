@@ -7,6 +7,7 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import { AuthShell } from "#/components/auth-layout";
+import { GoogleButton } from "#/components/google-sign-in-button";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -56,6 +57,7 @@ function SignupPage() {
 			title="Create your account"
 			description="Start tracking attendance for your team today"
 		>
+			<GoogleButton label="Sign up with Google" callbackURL="/onboarding" />
 			<form onSubmit={handleSubmit} className="flex flex-col gap-4">
 				<div className="flex flex-col gap-2">
 					<Label htmlFor="name">Name</Label>

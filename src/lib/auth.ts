@@ -97,6 +97,21 @@ function createAuth() {
 				}
 			}),
 		},
+		...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+			? {
+					socialProviders: {
+						google: {
+							clientId: env.GOOGLE_CLIENT_ID,
+							clientSecret: env.GOOGLE_CLIENT_SECRET,
+						},
+					},
+				}
+			: {}),
+		account: {
+			accountLinking: {
+				enabled: true,
+			},
+		},
 		user: {
 			changeEmail: {
 				enabled: true,
