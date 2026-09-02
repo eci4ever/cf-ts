@@ -3,6 +3,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { Send, UserCog, UserMinus, UserPlus, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { RoleBadge } from "#/components/role-badge";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
@@ -253,9 +254,9 @@ function TeamPage() {
 									<TableRow key={member.id}>
 										<TableCell className="font-medium">{member.name}</TableCell>
 										<TableCell>{member.email}</TableCell>
-											<TableCell>
-												<Badge variant="secondary">{member.role}</Badge>
-												{member.role === "supervisor" ? (
+										<TableCell>
+											<RoleBadge role={member.role} />
+											{member.role === "supervisor" ? (
 													<span className="mt-1 block text-xs text-muted-foreground">
 														{member.subordinateCount} subordinate
 														{member.subordinateCount === 1 ? "" : "s"}

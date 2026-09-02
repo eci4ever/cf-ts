@@ -23,6 +23,7 @@ import {
 	AlertDialogTitle,
 } from "#/components/ui/alert-dialog";
 import { Badge } from "#/components/ui/badge";
+import { RoleBadge } from "#/components/role-badge";
 import { Button } from "#/components/ui/button";
 import {
 	Card,
@@ -199,11 +200,10 @@ function UsersAdminPage() {
 		{
 			accessorKey: "role",
 			header: "Role",
-			cell: ({ row }) => (
-				<Badge variant="secondary">
-					{row.original.role?.split(",").includes("admin") ? "admin" : "user"}
-				</Badge>
-			),
+			cell: ({ row }) =>
+				row.original.role?.split(",").includes("admin") ? (
+					<RoleBadge role="platform" />
+				) : null,
 		},
 		{
 			accessorKey: "twoFactorEnabled",

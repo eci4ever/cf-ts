@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import {
 	ChevronsUpDown,
 	CircleUserRound,
@@ -7,6 +7,7 @@ import {
 	VenetianMask,
 	History,
 } from "lucide-react";
+import { RoleBadge } from "#/components/role-badge";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar";
 import {
 	DropdownMenu,
@@ -28,8 +29,16 @@ export function NavUser() {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const { isMobile } = useSidebar();
+	const { orgRole, isPlatformAdmin } = useRouteContext({ from: "/_app" });
 	const { data } = authClient.useSession();
 	const user = data?.user;
+
+	const badges = (
+		<>
+			{orgRole ? <RoleBadge role={orgRole} /> : null}
+			{isPlatformAdmin ? <RoleBadge role="platform" /> : null}
+		</>
+	);
 
 	async function handleSignOut() {
 		await authClient.signOut();
@@ -98,6 +107,9 @@ export function NavUser() {
 										{user?.name ?? "User"}
 									</span>
 									<span className="truncate text-xs">{user?.email ?? ""}</span>
+									{badges ? (
+										<span className="mt-1 flex flex-wrap gap-1">{badges}</span>
+									) : null}
 								</div>
 							</div>
 						</DropdownMenuLabel>
