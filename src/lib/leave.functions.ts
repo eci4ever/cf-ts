@@ -4,6 +4,7 @@ import { getDb } from "#/db";
 import { employee, leaveRequest, leaveType, organization } from "#/db/schema";
 import { countWorkingDays, isValidDateKey, rangesOverlap } from "./leave";
 import { getHolidayDates } from "./holidays";
+import { notifyEmployee, notifySupervisors } from "./notify";
 import { getOrgMemberContext } from "./session";
 
 async function getMemberContext() {
@@ -454,6 +455,27 @@ export const applyLeave = createServerFn({ method: "POST" })
 			createdAt: now,
 			updatedAt: now,
 		});
+		const [applicant] = await getDb()
+			.select({ name: employee.name })
+			.from(employee)
+			.where(eq(employee.id, employeeId))
+			.limit(1);
+		const [leaveTypeRow] = await getDb()
+			.select({ name: leaveType.name })
+			.from(leaveType)
+			.where(eq(leaveType.id, data.leaveTypeId))
+			.limit(1);
+		await notifySupervisors(
+			context.orgId,
+			employeeId,
+			`New leave request — ${applicant?.name ?? "An employee"}`,
+			`
+				<p><strong>${applicant?.name ?? "An employee"}</strong> applied for <strong>${leaveTypeRow?.name ?? "leave"}</strong>.</p>
+				<p style="margin:8px 0;">${data.startDate} → ${data.endDate} (${quote.days} day${quote.days === 1 ? "" : "s"})</p>
+				<p style="color:#555;">Reason: ${data.reason.trim()}</p>
+			`,
+			"/leave",
+		);
 		return { ok: true as const, days: quote.days };
 	});
 
@@ -601,6 +623,7 @@ export const decideLeave = createServerFn({ method: "POST" })
 				employeeId: leaveRequest.employeeId,
 				status: leaveRequest.status,
 				startDate: leaveRequest.startDate,
+				endDate: leaveRequest.endDate,
 			})
 			.from(leaveRequest)
 			.where(
@@ -658,5 +681,15 @@ export const decideLeave = createServerFn({ method: "POST" })
 				updatedAt: new Date(),
 			})
 			.where(eq(leaveRequest.id, data.requestId));
+		await notifyEmployee(
+			context.orgId,
+			request.employeeId,
+			`Your leave request was ${data.decision}`,
+			`
+				<p>Your leave request for <strong>${request.startDate}</strong>${request.endDate !== request.startDate ? ` → <strong>${request.endDate}</strong>` : ""} was <strong>${data.decision}</strong>.</p>
+				${data.reason?.trim() ? `<p style="color:#555;">Note from your approver: ${data.reason.trim()}</p>` : ""}
+			`,
+			"/leave",
+		);
 		return { ok: true as const };
 	});

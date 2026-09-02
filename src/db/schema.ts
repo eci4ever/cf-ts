@@ -110,6 +110,9 @@ export const organization = sqliteTable("organization", {
 	geofenceEnabled: integer("geofence_enabled", { mode: "boolean" })
 		.notNull()
 		.default(false),
+	emailNotifications: integer("email_notifications", { mode: "boolean" })
+		.notNull()
+		.default(true),
 	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 

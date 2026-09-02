@@ -49,6 +49,7 @@ export const getOrgSettings = createServerFn({ method: "GET" }).handler(
 				workStartMinutes: organization.workStartMinutes,
 				workEndMinutes: organization.workEndMinutes,
 				graceMinutes: organization.graceMinutes,
+				emailNotifications: organization.emailNotifications,
 			})
 			.from(organization)
 			.where(eq(organization.id, orgId))
@@ -126,9 +127,21 @@ export const getOrgSettings = createServerFn({ method: "GET" }).handler(
 			currentUserId: currentSession.user.id,
 			members: membersWithMeta,
 			holidays,
+			emailNotifications: org.emailNotifications,
 		};
 	},
 );
+
+export const setEmailNotifications = createServerFn({ method: "POST" })
+	.validator((input: { enabled: boolean }) => input)
+	.handler(async ({ data }) => {
+		const { orgId } = await requireOrgRole(["owner", "admin"]);
+		await getDb()
+			.update(organization)
+			.set({ emailNotifications: data.enabled })
+			.where(eq(organization.id, orgId));
+		return { ok: true as const };
+	});
 
 export const setMemberRole = createServerFn({ method: "POST" })
 	.validator((input: { userId: string; role: string }) => input)

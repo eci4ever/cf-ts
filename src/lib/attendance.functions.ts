@@ -13,6 +13,7 @@ import {
 } from "#/db/schema";
 import { deriveIssues, enumerateDays } from "./leave";
 import { getHolidayDates } from "./holidays";
+import { notifyEmployee, notifySupervisors } from "./notify";
 import {
 	type ClockInStatus,
 	type ClockOutStatus,
@@ -1153,6 +1154,7 @@ export const submitJustification = createServerFn({ method: "POST" })
 			.select({
 				id: attendanceIssue.id,
 				employeeId: attendanceIssue.employeeId,
+				date: attendanceIssue.date,
 				status: attendanceIssue.status,
 			})
 			.from(attendanceIssue)
@@ -1183,6 +1185,16 @@ export const submitJustification = createServerFn({ method: "POST" })
 				updatedAt: new Date(),
 			})
 			.where(eq(attendanceIssue.id, data.issueId));
+		await notifySupervisors(
+			context.orgId,
+			issue.employeeId,
+			"Justification submitted for review",
+			`
+				<p>A justification was submitted for an attendance issue dated <strong>${issue.date}</strong>.</p>
+				<p style="color:#555;">\"${justification}\"</p>
+			`,
+			"/attendance",
+		);
 		return { ok: true as const };
 	});
 
@@ -1253,6 +1265,7 @@ export const verifyIssue = createServerFn({ method: "POST" })
 				id: attendanceIssue.id,
 				employeeId: attendanceIssue.employeeId,
 				organizationId: attendanceIssue.organizationId,
+				date: attendanceIssue.date,
 				status: attendanceIssue.status,
 			})
 			.from(attendanceIssue)
@@ -1303,5 +1316,15 @@ export const verifyIssue = createServerFn({ method: "POST" })
 				updatedAt: new Date(),
 			})
 			.where(eq(attendanceIssue.id, data.issueId));
+		await notifyEmployee(
+			context.orgId,
+			issue.employeeId,
+			`Your attendance justification was ${data.decision}`,
+			`
+				<p>Your justification for <strong>${issue.date}</strong> was <strong>${data.decision}</strong>.</p>
+				${reviewNote ? `<p style="color:#555;">Reviewer's note: ${reviewNote}</p>` : ""}
+			`,
+			"/attendance",
+		);
 		return { ok: true as const };
 	});

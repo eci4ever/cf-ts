@@ -24,6 +24,7 @@ import {
 } from "#/components/ui/card";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
+import { Switch } from "#/components/ui/switch";
 import {
 	Select,
 	SelectContent,
@@ -51,6 +52,7 @@ import {
 	deleteCurrentOrg,
 	deleteHoliday,
 	getOrgSettings,
+	setEmailNotifications,
 	transferOwnership,
 	updateOrgName,
 	updateSchedule,
@@ -121,6 +123,10 @@ function SettingsPage() {
 			/>
 			<HolidaysCard
 				holidays={settings.holidays}
+				onChanged={() => queryClient.invalidateQueries({ queryKey: ["org"] })}
+			/>
+			<EmailNotificationsCard
+				enabled={settings.emailNotifications}
 				onChanged={() => queryClient.invalidateQueries({ queryKey: ["org"] })}
 			/>
 			<GeofenceCard />
@@ -473,6 +479,52 @@ function HolidaysCard({
 						))}
 					</ul>
 				)}
+			</CardContent>
+		</Card>
+	);
+}
+
+function EmailNotificationsCard({
+	enabled,
+	onChanged,
+}: {
+	enabled: boolean;
+	onChanged: () => void;
+}) {
+	const toggleMutation = useMutation({
+		mutationFn: async (next: boolean) => {
+			const result = await setEmailNotifications({ data: { enabled: next } });
+			if (!result.ok) {
+				throw new Error("Failed to update email settings");
+			}
+			return result;
+		},
+		onSuccess: (_result, next) => {
+			toast.success(next ? "Email notifications on" : "Email notifications off");
+			onChanged();
+		},
+		onError: (error) => toast.error(error.message),
+	});
+
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Email notifications</CardTitle>
+				<CardDescription>
+					Email employees and supervisors when leave requests and attendance
+					justifications are submitted or decided.
+				</CardDescription>
+			</CardHeader>
+			<CardContent className="flex items-center gap-3">
+				<Switch
+					id="email-notifications"
+					checked={enabled}
+					disabled={toggleMutation.isPending}
+					onCheckedChange={(checked) => toggleMutation.mutate(checked)}
+				/>
+				<Label htmlFor="email-notifications">
+					{enabled ? "On — emails are sent for leave and issue updates" : "Off"}
+				</Label>
 			</CardContent>
 		</Card>
 	);
