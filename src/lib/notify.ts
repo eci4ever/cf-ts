@@ -71,6 +71,28 @@ export async function notifyEmployee(
 	await notifyUser(orgId, row?.userId ?? null, subject, bodyHtml, linkPath);
 }
 
+/** Email the org's owners and admins (respects the org's email toggle). */
+export async function notifyOrgAdmins(
+	orgId: string,
+	subject: string,
+	bodyHtml: string,
+	linkPath?: string,
+): Promise<void> {
+	if (!(await orgEmailNotificationsEnabled(orgId))) return;
+	const admins = await getDb()
+		.select({ userId: member.userId })
+		.from(member)
+		.where(
+			and(
+				eq(member.organizationId, orgId),
+				inArray(member.role, ["owner", "admin"]),
+			),
+		);
+	for (const admin of admins) {
+		await notifyUser(orgId, admin.userId, subject, bodyHtml, linkPath);
+	}
+}
+
 /**
  * Email the employee's supervisor; falls back to org owners/admins when the
  * employee has no supervisor (or the supervisor has no linked account).

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
 	type AnySQLiteColumn,
 	integer,
@@ -113,8 +114,37 @@ export const organization = sqliteTable("organization", {
 	emailNotifications: integer("email_notifications", { mode: "boolean" })
 		.notNull()
 		.default(true),
+	billingWarnedUntil: integer("billing_warned_until", { mode: "timestamp" }),
 	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
+
+export const topupRequest = sqliteTable(
+	"topup_request",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		amountSen: integer("amount_sen").notNull(),
+		paymentRef: text("payment_ref").notNull(),
+		status: text("status").notNull().default("pending"),
+		requestedBy: text("requested_by")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		decidedBy: text("decided_by").references(() => user.id, {
+			onDelete: "set null",
+		}),
+		decidedAt: integer("decided_at", { mode: "timestamp" }),
+		decisionNote: text("decision_note"),
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+		updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+	},
+	(table) => [
+		uniqueIndex("topup_request_pending_uq")
+			.on(table.organizationId)
+			.where(sql`status = 'pending'`),
+	],
+);
 
 export const workSite = sqliteTable("work_site", {
 	id: text("id").primaryKey(),

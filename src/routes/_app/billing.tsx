@@ -13,6 +13,16 @@ import {
 	CardTitle,
 } from "#/components/ui/card";
 import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "#/components/ui/dialog";
+import { Input } from "#/components/ui/input";
+import { Label } from "#/components/ui/label";
+import {
 	Select,
 	SelectContent,
 	SelectGroup,
@@ -30,8 +40,10 @@ import {
 } from "#/components/ui/table";
 import {
 	getBillingOverview,
+	listMyTopupRequests,
 	type SubscriptionState,
 	subscribePlan,
+	requestTopup,
 } from "#/lib/billing.functions";
 import { getMyOrgRole } from "#/lib/org.functions";
 import {
@@ -40,6 +52,7 @@ import {
 	PAID_PLANS,
 	PLANS,
 	type PlanId,
+	parseRmToSen,
 	SUBSCRIPTION_MONTHS,
 } from "#/lib/subscription";
 
@@ -148,20 +161,27 @@ function BillingPage() {
 			</Card>
 
 			<Card>
-				<CardHeader>
-					<CardTitle>Payment instructions</CardTitle>
-					<CardDescription>
-						Credits are topped up manually by the administrator
-					</CardDescription>
+				<CardHeader className="flex-row items-start justify-between gap-2">
+					<div>
+						<CardTitle>Payment instructions</CardTitle>
+						<CardDescription>
+							Transfer to the account provided by the administrator, then submit
+							a top-up request with your payment reference
+						</CardDescription>
+					</div>
+					<RequestTopupButton />
 				</CardHeader>
 				<CardContent className="text-sm text-muted-foreground">
 					<p>
-						Make a bank transfer to the account provided by the administrator,
-						then contact them with your proof of payment. Credits will appear in
-						your balance once confirmed.
+						Make a bank transfer, then click <strong>Request top-up</strong> and
+						enter the amount plus your transfer reference number. The platform
+						administrator will verify and approve it — your balance updates
+						automatically once approved.
 					</p>
 				</CardContent>
 			</Card>
+
+			<TopupRequestsCard />
 
 			<Card>
 				<CardHeader>
@@ -353,5 +373,163 @@ function PlanCard({
 				{buttonLabel}
 			</Button>
 		</div>
+	);
+}
+
+type TopupRequestRow = {
+	id: string;
+	amountSen: number;
+	paymentRef: string;
+	status: string;
+	decisionNote: string | null;
+	createdAt: Date | string;
+};
+
+function RequestTopupButton() {
+	const queryClient = useQueryClient();
+	const [open, setOpen] = useState(false);
+	const [amount, setAmount] = useState("");
+	const [paymentRef, setPaymentRef] = useState("");
+	const requestMutation = useMutation({
+		mutationFn: async (input: { amountSen: number; paymentRef: string }) => {
+			const result = await requestTopup({ data: input });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: () => {
+			toast.success("Top-up request submitted");
+			setOpen(false);
+			setAmount("");
+			setPaymentRef("");
+			queryClient.invalidateQueries({ queryKey: ["billing"] });
+		},
+		onError: (error) => toast.error(error.message),
+	});
+
+	function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		const amountSen = parseRmToSen(amount);
+		if (amountSen === null || amountSen < 1000) {
+			toast.error("Minimum top-up is RM10");
+			return;
+		}
+		requestMutation.mutate({ amountSen, paymentRef });
+	}
+
+	return (
+		<>
+			<Button size="sm" onClick={() => setOpen(true)}>
+				<Wallet />
+				Request top-up
+			</Button>
+			<Dialog open={open} onOpenChange={setOpen}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Request credit top-up</DialogTitle>
+						<DialogDescription>
+							Enter the amount you transferred and the payment reference
+							number. The platform administrator will verify and approve it.
+						</DialogDescription>
+					</DialogHeader>
+					<form onSubmit={handleSubmit} className="flex flex-col gap-4">
+						<div className="flex flex-col gap-2">
+							<Label htmlFor="topup-amount">Amount (RM)</Label>
+							<Input
+								id="topup-amount"
+								inputMode="decimal"
+								placeholder="100.00"
+								value={amount}
+								onChange={(event) => setAmount(event.target.value)}
+								required
+							/>
+						</div>
+						<div className="flex flex-col gap-2">
+							<Label htmlFor="topup-ref">Payment reference</Label>
+							<Input
+								id="topup-ref"
+								value={paymentRef}
+								onChange={(event) => setPaymentRef(event.target.value)}
+								placeholder="e.g. FT1234567890"
+								required
+								minLength={3}
+								maxLength={60}
+							/>
+						</div>
+						<DialogFooter>
+							<Button type="submit" disabled={requestMutation.isPending}>
+								{requestMutation.isPending ? "Submitting…" : "Submit request"}
+							</Button>
+						</DialogFooter>
+					</form>
+				</DialogContent>
+			</Dialog>
+		</>
+	);
+}
+
+function TopupRequestsCard() {
+	const requestsQuery = useQuery({
+		queryKey: ["billing", "topup-requests"],
+		queryFn: listMyTopupRequests,
+	});
+	const requests = (requestsQuery.data ?? []) as TopupRequestRow[];
+	if (requestsQuery.isPending) {
+		return null;
+	}
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>My top-up requests</CardTitle>
+				<CardDescription>Latest requests and their outcomes</CardDescription>
+			</CardHeader>
+			<CardContent>
+				{requests.length === 0 ? (
+					<p className="text-sm text-muted-foreground">
+						No top-up requests yet.
+					</p>
+				) : (
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>Date</TableHead>
+								<TableHead>Amount</TableHead>
+								<TableHead>Reference</TableHead>
+								<TableHead>Status</TableHead>
+								<TableHead>Note</TableHead>
+							</TableRow>
+						</TableHeader>
+						<TableBody>
+							{requests.map((request) => (
+								<TableRow key={request.id}>
+									<TableCell>
+										{new Date(request.createdAt).toLocaleDateString()}
+									</TableCell>
+									<TableCell>{formatRm(request.amountSen)}</TableCell>
+									<TableCell>{request.paymentRef}</TableCell>
+									<TableCell>
+										<Badge
+											variant={
+												request.status === "approved"
+													? "outline"
+													: request.status === "rejected"
+														? "destructive"
+														: "secondary"
+											}
+										>
+											{request.status}
+										</Badge>
+									</TableCell>
+									<TableCell className="text-muted-foreground">
+										{request.decisionNote ?? "—"}
+									</TableCell>
+								</TableRow>
+							))}
+						</TableBody>
+					</Table>
+				)}
+			</CardContent>
+		</Card>
 	);
 }

@@ -29,6 +29,7 @@ import {
 } from "#/components/ui/dialog";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
+import { Textarea } from "#/components/ui/textarea";
 import {
 	Select,
 	SelectContent,
@@ -45,7 +46,12 @@ import {
 	SheetTitle,
 } from "#/components/ui/sheet";
 import { listOrgLedger } from "#/lib/admin.functions";
-import { adminAdjustCredit, listOrgBilling } from "#/lib/billing.functions";
+import {
+	adminAdjustCredit,
+	decideTopupRequest,
+	listOrgBilling,
+	listPendingTopupRequests,
+} from "#/lib/billing.functions";
 import {
 	formatRm,
 	type LedgerType,
@@ -260,7 +266,9 @@ function OrganizationsAdminPage() {
 	});
 
 	return (
-		<Card>
+		<div className="flex flex-col gap-4">
+			<PendingTopupsCard />
+			<Card>
 			<CardHeader>
 				<CardTitle>Organization billing</CardTitle>
 				<CardDescription>
@@ -315,6 +323,161 @@ function OrganizationsAdminPage() {
 					}
 				}}
 			/>
+		</Card>
+		</div>
+	);
+}
+
+type PendingTopupRow = {
+	id: string;
+	organizationId: string;
+	orgName: string;
+	amountSen: number;
+	paymentRef: string;
+	requestedByName: string;
+	createdAt: Date | string;
+};
+
+function PendingTopupsCard() {
+	const queryClient = useQueryClient();
+	const [rejecting, setRejecting] = useState<PendingTopupRow | null>(null);
+	const [rejectNote, setRejectNote] = useState("");
+	const requestsQuery = useQuery({
+		queryKey: ["admin", "topup-requests"],
+		queryFn: listPendingTopupRequests,
+	});
+	const requests = (requestsQuery.data ?? []) as PendingTopupRow[];
+	const invalidate = () =>
+		queryClient.invalidateQueries({ queryKey: ["admin"] });
+
+	const decideMutation = useMutation({
+		mutationFn: async (input: {
+			requestId: string;
+			decision: "approved" | "rejected";
+			note?: string;
+		}) => {
+			const result = await decideTopupRequest({ data: input });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: (_result, variables) => {
+			toast.success(`Request ${variables.decision}`);
+			setRejecting(null);
+			setRejectNote("");
+			invalidate();
+		},
+		onError: (error) => toast.error(error.message),
+	});
+
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Top-up requests</CardTitle>
+				<CardDescription>
+					Approving adds the credit to the organization balance and records a
+					ledger entry
+				</CardDescription>
+			</CardHeader>
+			<CardContent>
+				{requestsQuery.isPending ? (
+					<p className="text-sm text-muted-foreground">Loading…</p>
+				) : requests.length === 0 ? (
+					<p className="text-sm text-muted-foreground">
+						No pending top-up requests.
+					</p>
+				) : (
+					<ul className="flex flex-col gap-2">
+						{requests.map((request) => (
+							<li
+								key={request.id}
+								className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm"
+							>
+								<div className="min-w-0">
+									<p className="font-medium">{request.orgName}</p>
+									<p className="text-xs text-muted-foreground">
+										{formatRm(request.amountSen)} · ref {request.paymentRef} ·{" "}
+										{request.requestedByName} ·{" "}
+										{new Date(request.createdAt).toLocaleDateString()}
+									</p>
+								</div>
+								<div className="flex gap-1">
+									<Button
+										size="sm"
+										variant="outline"
+										disabled={decideMutation.isPending}
+										onClick={() =>
+											decideMutation.mutate({
+												requestId: request.id,
+												decision: "approved",
+											})
+										}
+									>
+										Approve
+									</Button>
+									<Button
+										size="sm"
+										variant="ghost"
+										className="text-destructive"
+										onClick={() => {
+											setRejecting(request);
+											setRejectNote("");
+										}}
+									>
+										Reject
+									</Button>
+								</div>
+							</li>
+						))}
+					</ul>
+				)}
+			</CardContent>
+			<Dialog
+				open={rejecting !== null}
+				onOpenChange={(open) => {
+					if (!open) {
+						setRejecting(null);
+					}
+				}}
+			>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Reject top-up request</DialogTitle>
+						<DialogDescription>
+							{rejecting
+								? `${rejecting.orgName} — ${formatRm(rejecting.amountSen)} (ref ${rejecting.paymentRef})`
+								: ""}
+						</DialogDescription>
+					</DialogHeader>
+					<div className="flex flex-col gap-2">
+						<Label htmlFor="reject-note">Reason (shown to the requester)</Label>
+						<Textarea
+							id="reject-note"
+							value={rejectNote}
+							onChange={(event) => setRejectNote(event.target.value)}
+							placeholder="e.g. Payment reference not found in bank statement"
+						/>
+					</div>
+					<DialogFooter>
+						<Button
+							variant="destructive"
+							disabled={decideMutation.isPending}
+							onClick={() => {
+								if (rejecting) {
+									decideMutation.mutate({
+										requestId: rejecting.id,
+										decision: "rejected",
+										note: rejectNote,
+									});
+								}
+							}}
+						>
+							{decideMutation.isPending ? "Rejecting…" : "Reject request"}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</Card>
 	);
 }
