@@ -335,6 +335,22 @@ export const creditLedger = sqliteTable("credit_ledger", {
 	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
+export const auditLog = sqliteTable("audit_log", {
+	id: text("id").primaryKey(),
+	organizationId: text("organization_id").references(() => organization.id, {
+		onDelete: "cascade",
+	}),
+	userId: text("user_id")
+		.notNull()
+		.references(() => user.id, { onDelete: "cascade" }),
+	targetUserId: text("target_user_id").references(() => user.id, {
+		onDelete: "cascade",
+	}),
+	action: text("action").notNull(),
+	detail: text("detail"),
+	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
 export const member = sqliteTable("member", {
 	id: text("id").primaryKey(),
 	userId: text("user_id")

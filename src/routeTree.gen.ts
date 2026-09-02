@@ -26,7 +26,9 @@ import { Route as AppLeaveRouteImport } from './routes/_app/leave'
 import { Route as AppReportsRouteImport } from './routes/_app/reports'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppTeamRouteImport } from './routes/_app/team'
+import { Route as AppAccountActivityRouteImport } from './routes/_app/account_.activity'
 import { Route as AppAdminIndexRouteImport } from './routes/_app/admin.index'
+import { Route as AppAdminAuditRouteImport } from './routes/_app/admin/audit'
 import { Route as AppAdminOrganizationsRouteImport } from './routes/_app/admin.organizations'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin.users'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -115,9 +117,19 @@ const AppTeamRoute = AppTeamRouteImport.update({
   path: '/team',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAccountActivityRoute = AppAccountActivityRouteImport.update({
+  id: '/account_/activity',
+  path: '/account/activity',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAdminIndexRoute = AppAdminIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppAdminRoute,
+} as any)
+const AppAdminAuditRoute = AppAdminAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
   getParentRoute: () => AppAdminRoute,
 } as any)
 const AppAdminOrganizationsRoute = AppAdminOrganizationsRouteImport.update({
@@ -153,6 +165,8 @@ export interface FileRoutesByFullPath {
   '/reports': typeof AppReportsRoute
   '/settings': typeof AppSettingsRoute
   '/team': typeof AppTeamRoute
+  '/account/activity': typeof AppAccountActivityRoute
+  '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organizations': typeof AppAdminOrganizationsRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -174,6 +188,8 @@ export interface FileRoutesByTo {
   '/reports': typeof AppReportsRoute
   '/settings': typeof AppSettingsRoute
   '/team': typeof AppTeamRoute
+  '/account/activity': typeof AppAccountActivityRoute
+  '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organizations': typeof AppAdminOrganizationsRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -198,6 +214,8 @@ export interface FileRoutesById {
   '/_app/reports': typeof AppReportsRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/team': typeof AppTeamRoute
+  '/_app/account_/activity': typeof AppAccountActivityRoute
+  '/_app/admin/audit': typeof AppAdminAuditRoute
   '/_app/admin/organizations': typeof AppAdminOrganizationsRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -222,6 +240,8 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/team'
+    | '/account/activity'
+    | '/admin/audit'
     | '/admin/organizations'
     | '/admin/users'
     | '/api/auth/$'
@@ -243,6 +263,8 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/team'
+    | '/account/activity'
+    | '/admin/audit'
     | '/admin/organizations'
     | '/admin/users'
     | '/api/auth/$'
@@ -266,6 +288,8 @@ export interface FileRouteTypes {
     | '/_app/reports'
     | '/_app/settings'
     | '/_app/team'
+    | '/_app/account_/activity'
+    | '/_app/admin/audit'
     | '/_app/admin/organizations'
     | '/_app/admin/users'
     | '/api/auth/$'
@@ -404,11 +428,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTeamRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/account_/activity': {
+      id: '/_app/account_/activity'
+      path: '/account/activity'
+      fullPath: '/account/activity'
+      preLoaderRoute: typeof AppAccountActivityRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/admin/': {
       id: '/_app/admin/'
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AppAdminIndexRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
+    '/_app/admin/audit': {
+      id: '/_app/admin/audit'
+      path: '/audit'
+      fullPath: '/admin/audit'
+      preLoaderRoute: typeof AppAdminAuditRouteImport
       parentRoute: typeof AppAdminRoute
     }
     '/_app/admin/organizations': {
@@ -436,12 +474,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppAdminRouteChildren {
+  AppAdminAuditRoute: typeof AppAdminAuditRoute
   AppAdminOrganizationsRoute: typeof AppAdminOrganizationsRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
   AppAdminIndexRoute: typeof AppAdminIndexRoute
 }
 
 const AppAdminRouteChildren: AppAdminRouteChildren = {
+  AppAdminAuditRoute: AppAdminAuditRoute,
   AppAdminOrganizationsRoute: AppAdminOrganizationsRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
   AppAdminIndexRoute: AppAdminIndexRoute,
@@ -462,6 +502,7 @@ interface AppRouteChildren {
   AppReportsRoute: typeof AppReportsRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppTeamRoute: typeof AppTeamRoute
+  AppAccountActivityRoute: typeof AppAccountActivityRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -475,6 +516,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppReportsRoute: AppReportsRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppTeamRoute: AppTeamRoute,
+  AppAccountActivityRoute: AppAccountActivityRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

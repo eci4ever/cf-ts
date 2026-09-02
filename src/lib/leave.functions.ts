@@ -5,6 +5,7 @@ import { employee, leaveRequest, leaveType, organization } from "#/db/schema";
 import { countWorkingDays, isValidDateKey, rangesOverlap } from "./leave";
 import { getHolidayDates } from "./holidays";
 import { notifyEmployee, notifySupervisors } from "./notify";
+import { logAudit } from "./audit.functions";
 import { getOrgMemberContext } from "./session";
 
 async function getMemberContext() {
@@ -476,6 +477,12 @@ export const applyLeave = createServerFn({ method: "POST" })
 			`,
 			"/leave",
 		);
+		await logAudit({
+			organizationId: context.orgId,
+			userId: context.session.user.id,
+			action: "leave.applied",
+			detail: `${leaveTypeRow?.name ?? "Leave"} ${data.startDate} → ${data.endDate}`,
+		});
 		return { ok: true as const, days: quote.days };
 	});
 
@@ -691,5 +698,17 @@ export const decideLeave = createServerFn({ method: "POST" })
 			`,
 			"/leave",
 		);
+		const [targetEmployee] = await getDb()
+			.select({ userId: employee.userId })
+			.from(employee)
+			.where(eq(employee.id, request.employeeId))
+			.limit(1);
+		await logAudit({
+			organizationId: context.orgId,
+			userId: context.session.user.id,
+			targetUserId: targetEmployee?.userId ?? null,
+			action: "leave.decided",
+			detail: `${data.decision} — ${request.startDate}${request.endDate !== request.startDate ? ` → ${request.endDate}` : ""}${data.reason?.trim() ? ` (${data.reason.trim()})` : ""}`,
+		});
 		return { ok: true as const };
 	});

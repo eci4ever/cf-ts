@@ -9,6 +9,7 @@ import {
 	session,
 	user,
 } from "#/db/schema";
+import { logAudit } from "./audit.functions";
 import { parseTimeToMinutes } from "./schedule";
 import { getCurrentSession } from "./session";
 
@@ -148,7 +149,7 @@ export const setEmailNotifications = createServerFn({ method: "POST" })
 export const setMemberRole = createServerFn({ method: "POST" })
 	.validator((input: { userId: string; role: string }) => input)
 	.handler(async ({ data }) => {
-		const { orgId } = await requireOrgRole(["owner", "admin"]);
+		const { session, orgId } = await requireOrgRole(["owner", "admin"]);
 		const { role } = data;
 		if (!["member", "supervisor", "admin"].includes(role)) {
 			return { ok: false as const, reason: "Invalid role" };
@@ -196,6 +197,13 @@ export const setMemberRole = createServerFn({ method: "POST" })
 			.where(
 				and(eq(member.organizationId, orgId), eq(member.userId, data.userId)),
 			);
+		await logAudit({
+			organizationId: orgId,
+			userId: session.user.id,
+			targetUserId: data.userId,
+			action: "settings.member_role_changed",
+			detail: `Role changed from ${targetMember.role} to ${role}`,
+		});
 		return { ok: true as const };
 	});
 
@@ -209,7 +217,7 @@ export const updateSchedule = createServerFn({ method: "POST" })
 		}) => input,
 	)
 	.handler(async ({ data }) => {
-		const { orgId } = await requireOrgRole(["owner", "admin"]);
+		const { session, orgId } = await requireOrgRole(["owner", "admin"]);
 		const workStartMinutes = parseTimeToMinutes(data.startTime);
 		const workEndMinutes = parseTimeToMinutes(data.endTime);
 		if (workStartMinutes === null || workEndMinutes === null) {
@@ -249,6 +257,12 @@ export const updateSchedule = createServerFn({ method: "POST" })
 				graceMinutes,
 			})
 			.where(eq(organization.id, orgId));
+		await logAudit({
+			organizationId: orgId,
+			userId: session.user.id,
+			action: "settings.schedule_updated",
+			detail: `Work days ${workDays.join(",")} · ${data.startTime}-${data.endTime} · grace ${graceMinutes}m`,
+		});
 		return { ok: true as const };
 	});
 
@@ -334,7 +348,7 @@ export const deleteCurrentOrg = createServerFn({ method: "POST" }).handler(
 export const addHoliday = createServerFn({ method: "POST" })
 	.validator((input: { name: string; date: string }) => input)
 	.handler(async ({ data }) => {
-		const { orgId } = await requireOrgRole(["owner", "admin"]);
+		const { session, orgId } = await requireOrgRole(["owner", "admin"]);
 		const name = data.name.trim();
 		const date = data.date.trim();
 		if (name.length < 2 || name.length > 60) {
@@ -363,20 +377,35 @@ export const addHoliday = createServerFn({ method: "POST" })
 			date,
 			createdAt: new Date(),
 		});
+		await logAudit({
+			organizationId: orgId,
+			userId: session.user.id,
+			action: "settings.holiday_added",
+			detail: `${name} (${date})`,
+		});
 		return { ok: true as const };
 	});
 
 export const deleteHoliday = createServerFn({ method: "POST" })
 	.validator((input: { holidayId: string }) => input)
 	.handler(async ({ data }) => {
-		const { orgId } = await requireOrgRole(["owner", "admin"]);
-		await getDb()
+		const { session, orgId } = await requireOrgRole(["owner", "admin"]);
+		const [removed] = await getDb()
 			.delete(orgHoliday)
 			.where(
 				and(
 					eq(orgHoliday.id, data.holidayId),
 					eq(orgHoliday.organizationId, orgId),
 				),
-			);
+			)
+			.returning({ name: orgHoliday.name, date: orgHoliday.date });
+		if (removed) {
+			await logAudit({
+				organizationId: orgId,
+				userId: session.user.id,
+				action: "settings.holiday_removed",
+				detail: `${removed.name} (${removed.date})`,
+			});
+		}
 		return { ok: true as const };
 	});

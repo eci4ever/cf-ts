@@ -10,6 +10,7 @@ import {
 } from "#/db/schema";
 import { sendEmail } from "./email";
 import { notifyOrgAdmins } from "./notify";
+import { logAudit } from "./audit.functions";
 import { getCurrentSession } from "./session";
 import {
 	addMonths,
@@ -167,6 +168,14 @@ async function settleSubscription(
 			note: "Subscription expired after grace period — downgraded to Free",
 			createdBy: userId,
 		});
+		if (userId) {
+			await logAudit({
+				organizationId: org.id,
+				userId,
+				action: "billing.downgraded",
+				detail: "Subscription downgraded to Free after grace period",
+			});
+		}
 		await notifyOrgAdmins(
 			org.id,
 			"Action needed: subscription downgraded to Free",
@@ -359,6 +368,12 @@ export const subscribePlan = createServerFn({ method: "POST" })
 				? `${PLANS[planId].name} x ${months} month${months > 1 ? "s" : ""} (plan changed)`
 				: `${PLANS[planId].name} x ${months} month${months > 1 ? "s" : ""}`,
 			createdBy: session.user.id,
+		});
+		await logAudit({
+			organizationId: orgId,
+			userId: session.user.id,
+			action: "billing.subscribed",
+			detail: `${PLANS[planId].name} plan for ${months} month${months > 1 ? "s" : ""} — ${formatRm(priceSen)}`,
 		});
 		return {
 			ok: true as const,
@@ -639,5 +654,12 @@ export const decideTopupRequest = createServerFn({ method: "POST" })
 			`,
 			"/billing",
 		);
+		await logAudit({
+			organizationId: request.organizationId,
+			userId: session.user.id,
+			targetUserId: request.requestedBy,
+			action: data.decision === "approved" ? "billing.topup_approved" : "billing.topup_rejected",
+			detail: `${formatRm(request.amountSen)} (ref: ${request.paymentRef})${note ? ` — ${note}` : ""}`,
+		});
 		return { ok: true as const };
 	});

@@ -9,6 +9,7 @@ import { getDb } from "#/db";
 import * as schema from "#/db/schema";
 import { member } from "#/db/schema";
 import { sendEmail } from "./email";
+import { logAudit } from "./audit.functions";
 
 function createAuth() {
 	const baseURL = env.BETTER_AUTH_URL || "http://localhost:3000";
@@ -70,6 +71,42 @@ function createAuth() {
 			],
 		},
 		hooks: {
+			after: createAuthMiddleware(async (ctx) => {
+				try {
+					const returned = (ctx as { returned?: unknown }).returned as { user?: { id?: string }; token?: unknown } | APIError | undefined;
+					if (returned && typeof returned === "object" && "statusCode" in returned) {
+						return; // failed request — only log successes
+					}
+					const sessionUser = ctx.context?.session?.user?.id;
+					const userId =
+						sessionUser ??
+						(typeof returned === "object" && returned && "user" in returned
+							? (returned as { user?: { id: string } }).user?.id
+							: undefined);
+					if (!userId) {
+						return;
+					}
+					switch (ctx.path) {
+						case "/sign-out":
+							await logAudit({ userId, action: "account.sign_out", detail: "Signed out" });
+							break;
+						case "/change-password":
+							await logAudit({ userId, action: "account.password_changed", detail: "Password changed" });
+							break;
+						case "/change-email":
+							await logAudit({ userId, action: "account.email_changed", detail: "Email change requested" });
+							break;
+						case "/two-factor/enable":
+							await logAudit({ userId, action: "account.2fa_enabled", detail: "Two-factor authentication enabled" });
+							break;
+						case "/two-factor/disable":
+							await logAudit({ userId, action: "account.2fa_disabled", detail: "Two-factor authentication disabled" });
+							break;
+					}
+				} catch (error) {
+					console.error("[audit] after-hook failed", error);
+				}
+			}),
 			before: createAuthMiddleware(async (ctx: { path: string; body?: { password?: unknown; newPassword?: unknown } }) => {
 				if (
 					ctx.path !== "/sign-up/email" &&
@@ -156,6 +193,29 @@ function createAuth() {
 		databaseHooks: {
 			session: {
 				create: {
+					after: async (created) => {
+						const record = created as unknown as {
+							userId: string;
+							activeOrganizationId: string | null;
+							impersonatedBy?: string | null;
+						};
+						if (record.impersonatedBy) {
+							await logAudit({
+								organizationId: record.activeOrganizationId,
+								userId: record.impersonatedBy,
+								targetUserId: record.userId,
+								action: "impersonation.started",
+								detail: "Platform admin started impersonating this account",
+							});
+							return;
+						}
+						await logAudit({
+							organizationId: record.activeOrganizationId,
+							userId: record.userId,
+							action: "account.sign_in",
+							detail: "Signed in",
+						});
+					},
 					before: async (session) => {
 						const memberships = await getDb()
 							.select({ organizationId: member.organizationId })

@@ -14,6 +14,7 @@ import {
 import { deriveIssues, enumerateDays } from "./leave";
 import { getHolidayDates } from "./holidays";
 import { notifyEmployee, notifySupervisors } from "./notify";
+import { logAudit } from "./audit.functions";
 import {
 	type ClockInStatus,
 	type ClockOutStatus,
@@ -1195,6 +1196,18 @@ export const submitJustification = createServerFn({ method: "POST" })
 			`,
 			"/attendance",
 		);
+		const [submitterEmployee] = await getDb()
+			.select({ userId: employee.userId })
+			.from(employee)
+			.where(eq(employee.id, issue.employeeId))
+			.limit(1);
+		await logAudit({
+			organizationId: context.orgId,
+			userId: context.session.user.id,
+			targetUserId: submitterEmployee?.userId ?? null,
+			action: "issue.justification_submitted",
+			detail: `Justification for ${issue.date}`,
+		});
 		return { ok: true as const };
 	});
 
@@ -1326,5 +1339,17 @@ export const verifyIssue = createServerFn({ method: "POST" })
 			`,
 			"/attendance",
 		);
+		const [targetEmployee] = await getDb()
+			.select({ userId: employee.userId })
+			.from(employee)
+			.where(eq(employee.id, issue.employeeId))
+			.limit(1);
+		await logAudit({
+			organizationId: context.orgId,
+			userId: context.session.user.id,
+			targetUserId: targetEmployee?.userId ?? null,
+			action: "issue.reviewed",
+			detail: `${data.decision} — ${issue.date}${reviewNote ? ` (${reviewNote})` : ""}`,
+		});
 		return { ok: true as const };
 	});

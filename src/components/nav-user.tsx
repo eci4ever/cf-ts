@@ -5,6 +5,7 @@ import {
 	CircleUserRound,
 	LogOut,
 	VenetianMask,
+	History,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar";
 import {
@@ -105,6 +106,12 @@ export function NavUser() {
 							<Link to="/account">
 								<CircleUserRound />
 								Account
+							</Link>
+						</DropdownMenuItem>
+						<DropdownMenuItem asChild>
+							<Link to="/account/activity">
+								<History />
+								My activity
 							</Link>
 						</DropdownMenuItem>
 						{isImpersonating ? (
