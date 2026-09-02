@@ -336,9 +336,11 @@ export const listOrgBilling = createServerFn({ method: "GET" }).handler(
 				balanceSen: organization.balanceSen,
 				paidUntil: organization.paidUntil,
 				createdAt: organization.createdAt,
-				memberCount: sql<number>`(select count(*) from ${member} where ${member.organizationId} = ${organization.id})`,
+				memberCount: sql<number>`count(${member.id})`.mapWith(Number),
 			})
 			.from(organization)
+			.leftJoin(member, eq(member.organizationId, organization.id))
+			.groupBy(organization.id)
 			.orderBy(desc(organization.createdAt));
 		return rows.map(({ memberCount, ...row }) => ({
 			...row,
