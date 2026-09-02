@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import '@fontsource-variable/inter';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -46,7 +47,7 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.141 0.005 285.823);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.789 0.121 194.1);
+  --primary: oklch(0.789 0.121 211.5);
   --primary-foreground: oklch(0.21 0.006 285.885);
   --secondary: oklch(0.274 0.006 286.033);
   --secondary-foreground: oklch(0.985 0 0);
@@ -58,15 +59,15 @@
   --destructive-foreground: oklch(0.637 0.237 25.331);
   --border: oklch(0.274 0.006 286.033);
   --input: oklch(0.274 0.006 286.033);
-  --ring: oklch(0.789 0.121 194.1);
-  --chart-1: oklch(0.789 0.121 194.1);
+  --ring: oklch(0.789 0.121 211.5);
+  --chart-1: oklch(0.789 0.121 211.5);
   --chart-2: oklch(0.707 0.165 254.6);
   --chart-3: oklch(0.765 0.177 163.2);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.21 0.006 285.885);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.789 0.121 194.1);
+  --sidebar-primary: oklch(0.789 0.121 211.5);
   --sidebar-primary-foreground: oklch(0.21 0.006 285.885);
   --sidebar-accent: oklch(0.274 0.006 286.033);
   --sidebar-accent-foreground: oklch(0.985 0 0);
@@ -75,6 +76,7 @@
 }
 
 @theme inline {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

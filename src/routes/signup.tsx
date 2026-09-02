@@ -85,12 +85,14 @@ function SignupPage() {
 					<Input
 						id="password"
 						type="password"
-						minLength={8}
+						minLength={10}
 						value={password}
 						onChange={(event) => setPassword(event.target.value)}
 						required
 					/>
-					<p className="text-xs text-muted-foreground">At least 8 characters</p>
+					<p className="text-xs text-muted-foreground">
+						At least 10 characters, with letters and numbers
+					</p>
 				</div>
 				<Button type="submit" disabled={pending}>
 					{pending ? "Creating account..." : "Create account"}
