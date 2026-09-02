@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
 import { getAuth } from "./auth";
@@ -49,9 +50,11 @@ export const ensureActiveOrg = createServerFn({ method: "GET" }).handler(
 
 export const getAuthMethods = createServerFn({ method: "GET" }).handler(
 	async () => {
-		const env = (await import("cloudflare:workers")).env;
 		return {
 			google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
+			debugEnvKeys: Object.keys(env).filter((key) =>
+				key.includes("GOOGLE"),
+			),
 		};
 	},
 );
