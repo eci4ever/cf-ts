@@ -93,6 +93,26 @@ export const listEmployees = createServerFn({ method: "GET" }).handler(
 	},
 );
 
+export const suggestEmployeeNo = createServerFn({ method: "GET" }).handler(
+	async () => {
+		const { orgId } = await requireOrgAdmin();
+		const rows = await getDb()
+			.select({ employeeNo: employee.employeeNo })
+			.from(employee)
+			.where(eq(employee.organizationId, orgId));
+		let max = 0;
+		let width = 3;
+		for (const row of rows) {
+			const match = /^EMP-(\d+)$/.exec(row.employeeNo);
+			if (match) {
+				max = Math.max(max, Number(match[1]));
+				width = Math.max(width, match[1].length);
+			}
+		}
+		return { suggestion: `EMP-${String(max + 1).padStart(width, "0")}` };
+	},
+);
+
 export const createEmployee = createServerFn({ method: "POST" })
 	.validator(
 		(input: {
@@ -151,19 +171,22 @@ export const createEmployee = createServerFn({ method: "POST" })
 				reason: `Employee number ${employeeNo} already exists`,
 			};
 		}
-		await db.insert(employee).values({
-			id: crypto.randomUUID(),
-			organizationId: orgId,
-			name,
-			employeeNo,
-			position: data.position?.trim() || null,
-			shift: data.shift,
-			joinedAt: data.joinedAt ? new Date(data.joinedAt) : null,
-			siteId: data.siteId ?? null,
-			isActive: true,
-			createdAt: new Date(),
-		});
-		return { ok: true as const };
+		const result = await db
+			.insert(employee)
+			.values({
+				id: crypto.randomUUID(),
+				organizationId: orgId,
+				name,
+				employeeNo,
+				position: data.position?.trim() || null,
+				shift: data.shift,
+				joinedAt: data.joinedAt ? new Date(data.joinedAt) : null,
+				siteId: data.siteId ?? null,
+				isActive: true,
+				createdAt: new Date(),
+			})
+			.returning({ id: employee.id });
+		return { ok: true as const, id: result[0]?.id ?? null };
 	});
 
 async function requireEmployee(orgId: string, employeeId: string) {

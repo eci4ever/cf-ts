@@ -49,6 +49,7 @@ import {
 	listEmployees,
 	listLinkableMembers,
 	setEmployeeActive,
+	suggestEmployeeNo,
 	updateEmployee,
 } from "#/lib/employees.functions";
 import { getGeofenceSettings } from "#/lib/geofence.functions";
@@ -97,9 +98,14 @@ function EmployeesPage() {
 	const [sorting, setSorting] = useState([{ id: "employeeNo", desc: false }]);
 	const [formOpen, setFormOpen] = useState(false);
 	const [editing, setEditing] = useState<EmployeeRow | null>(null);
+	const [initialMemberId, setInitialMemberId] = useState<string | null>(null);
 	const employeesQuery = useQuery({
 		queryKey: ["employees", "list"],
 		queryFn: listEmployees,
+	});
+	const linkableQuery = useQuery({
+		queryKey: ["employees", "linkable"],
+		queryFn: listLinkableMembers,
 	});
 	const toggleMutation = useMutation({
 		mutationFn: async (input: {
@@ -129,13 +135,18 @@ function EmployeesPage() {
 	});
 	const employees = (employeesQuery.data ?? []) as EmployeeRow[];
 
-	const openAdd = useCallback(() => {
-		setEditing(null);
-		setFormOpen(true);
-	}, []);
+	const openAdd = useCallback(
+		(memberId?: string) => {
+			setEditing(null);
+			setInitialMemberId(memberId ?? null);
+			setFormOpen(true);
+		},
+		[],
+	);
 
 	const openEdit = useCallback((employee: EmployeeRow) => {
 		setEditing(employee);
+		setInitialMemberId(null);
 		setFormOpen(true);
 	}, []);
 
@@ -258,6 +269,13 @@ function EmployeesPage() {
 
 	return (
 		<div className="flex flex-col gap-4">
+			<OnboardingCard
+				members={linkableQuery.data ?? []}
+				employees={employees}
+				loading={linkableQuery.isPending || employeesQuery.isPending}
+				onAddForMember={(memberId) => openAdd(memberId)}
+				onLinkEmployee={(employee) => openEdit(employee)}
+			/>
 			<Card>
 				<CardHeader>
 					<CardTitle>Employees</CardTitle>
@@ -273,7 +291,7 @@ function EmployeesPage() {
 						loading={employeesQuery.isPending}
 						columnCount={columns.length}
 						toolbar={
-							<Button size="sm" onClick={openAdd}>
+							<Button size="sm" onClick={() => openAdd()}>
 								<Plus />
 								Add employee
 							</Button>
@@ -285,10 +303,12 @@ function EmployeesPage() {
 				open={formOpen}
 				editing={editing}
 				employees={employees}
+				initialMemberId={initialMemberId}
 				onOpenChange={(open) => {
 					if (!open) {
 						setFormOpen(false);
 						setEditing(null);
+						setInitialMemberId(null);
 					}
 				}}
 				onSaved={handleSaved}
@@ -297,16 +317,120 @@ function EmployeesPage() {
 	);
 }
 
+function OnboardingCard({
+	members,
+	employees,
+	loading,
+	onAddForMember,
+	onLinkEmployee,
+}: {
+	members: { userId: string; name: string; email: string }[];
+	employees: EmployeeRow[];
+	loading: boolean;
+	onAddForMember: (memberId: string) => void;
+	onLinkEmployee: (employee: EmployeeRow) => void;
+}) {
+	const unlinkedEmployees = employees.filter(
+		(employee) => employee.isActive && !employee.linkedEmail,
+	);
+	if (loading) {
+		return null;
+	}
+	if (members.length === 0 && unlinkedEmployees.length === 0) {
+		return null;
+	}
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Onboarding</CardTitle>
+				<CardDescription>
+					Finish linking accounts so employees can clock in themselves
+				</CardDescription>
+			</CardHeader>
+			<CardContent className="grid gap-4 lg:grid-cols-2">
+				<div className="flex flex-col gap-2">
+					<p className="text-sm font-medium">
+						Members without an employee record ({members.length})
+					</p>
+					{members.length === 0 ? (
+						<p className="text-xs text-muted-foreground">
+							Every member has an employee record.
+						</p>
+					) : (
+						<ul className="flex flex-col gap-1">
+							{members.map((member) => (
+								<li
+									key={member.userId}
+									className="flex items-center justify-between gap-2 rounded border px-3 py-1.5 text-sm"
+								>
+									<span className="min-w-0 truncate">
+										{member.name}{" "}
+										<span className="text-muted-foreground">
+											{member.email}
+										</span>
+									</span>
+									<Button
+										size="sm"
+										variant="outline"
+										onClick={() => onAddForMember(member.userId)}
+									>
+										Add employee
+									</Button>
+								</li>
+							))}
+						</ul>
+					)}
+				</div>
+				<div className="flex flex-col gap-2">
+					<p className="text-sm font-medium">
+						Employees without an account ({unlinkedEmployees.length})
+					</p>
+					{unlinkedEmployees.length === 0 ? (
+						<p className="text-xs text-muted-foreground">
+							Every active employee is linked.
+						</p>
+					) : (
+						<ul className="flex flex-col gap-1">
+							{unlinkedEmployees.map((employee) => (
+								<li
+									key={employee.id}
+									className="flex items-center justify-between gap-2 rounded border px-3 py-1.5 text-sm"
+								>
+									<span className="min-w-0 truncate">
+										{employee.name}{" "}
+										<span className="text-muted-foreground">
+											{employee.employeeNo}
+										</span>
+									</span>
+									<Button
+										size="sm"
+										variant="outline"
+										onClick={() => onLinkEmployee(employee)}
+									>
+										Link account
+									</Button>
+								</li>
+							))}
+						</ul>
+					)}
+				</div>
+			</CardContent>
+		</Card>
+	);
+}
+
 function EmployeeFormDialog({
 	open,
 	editing,
 	employees,
+	initialMemberId,
 	onOpenChange,
 	onSaved,
 }: {
 	open: boolean;
 	editing: EmployeeRow | null;
 	employees: EmployeeRow[];
+	initialMemberId?: string | null;
 	onOpenChange: (open: boolean) => void;
 	onSaved: () => void;
 }) {
@@ -374,6 +498,15 @@ function EmployeeFormDialog({
 			if (!result.ok) {
 				throw new Error(result.reason);
 			}
+			if (input.linkTarget && result.id) {
+				const linkResult = await linkEmployee({
+					data: { employeeId: result.id, targetUserId: input.linkTarget },
+				});
+				if (!linkResult.ok) {
+					throw new Error(linkResult.reason);
+				}
+				toast.success("Member linked to employee");
+			}
 			return result;
 		},
 		onSuccess: () => {
@@ -419,19 +552,25 @@ function EmployeeFormDialog({
 						siteId: "none",
 					},
 		);
-		setLinkTarget("");
-		if (editing) {
-			listLinkableMembers()
-				.then(setLinkable)
-				.catch(() => setLinkable([]));
-		} else {
-			setLinkable([]);
+		setLinkTarget(initialMemberId ?? "");
+		listLinkableMembers()
+			.then(setLinkable)
+			.catch(() => setLinkable([]));
+		if (!editing) {
+			suggestEmployeeNo()
+				.then(({ suggestion }) =>
+					setForm((previous) => ({
+						...previous,
+						employeeNo: previous.employeeNo || suggestion,
+					})),
+				)
+				.catch(() => {});
 		}
-	}, [open, editing]);
+	}, [open, editing, initialMemberId]);
 
 	function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		saveMutation.mutate({ linkTarget: editing ? linkTarget : undefined });
+		saveMutation.mutate({ linkTarget: linkTarget || undefined });
 	}
 
 	return (
@@ -536,39 +675,37 @@ function EmployeeFormDialog({
 								</Select>
 							</div>
 						) : null}
-						{editing ? (
+						<div className="flex flex-col gap-2">
+							<Label htmlFor="employee-site">Work location</Label>
+							<Select
+								value={form.siteId}
+								onValueChange={(value) => setForm({ ...form, siteId: value })}
+							>
+								<SelectTrigger id="employee-site" className="w-full">
+									<SelectValue placeholder="None" />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectGroup>
+										<SelectItem value="none">— No site —</SelectItem>
+										{sites.map((site) => (
+											<SelectItem key={site.id} value={site.id}>
+												{site.name}
+											</SelectItem>
+										))}
+									</SelectGroup>
+								</SelectContent>
+							</Select>
+						</div>
+						{linkable.length > 0 ? (
 							<div className="flex flex-col gap-2">
-								<Label htmlFor="employee-site">Work location</Label>
-								<Select
-									value={form.siteId}
-									onValueChange={(value) => setForm({ ...form, siteId: value })}
-								>
-									<SelectTrigger id="employee-site" className="w-full">
-										<SelectValue placeholder="None" />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectGroup>
-											<SelectItem value="none">— No site —</SelectItem>
-											{sites.map((site) => (
-												<SelectItem key={site.id} value={site.id}>
-													{site.name}
-												</SelectItem>
-											))}
-										</SelectGroup>
-									</SelectContent>
-								</Select>
-							</div>
-						) : null}
-						{editing ? (
-							<div className="flex flex-col gap-2">
-								<Label htmlFor="employee-link">Link member account</Label>
+								<Label htmlFor="employee-link">Link member account (optional)</Label>
 								<Select value={linkTarget} onValueChange={setLinkTarget}>
 									<SelectTrigger id="employee-link" className="w-full">
 										<SelectValue
 											placeholder={
-												editing.linkedEmail
+												editing?.linkedEmail
 													? editing.linkedEmail
-													: "Select a member"
+													: "Select a member to link"
 											}
 										/>
 									</SelectTrigger>
@@ -582,6 +719,9 @@ function EmployeeFormDialog({
 										</SelectGroup>
 									</SelectContent>
 								</Select>
+								<p className="text-xs text-muted-foreground">
+									Skip to key in without an account — can be linked later.
+								</p>
 							</div>
 						) : null}
 					</div>
