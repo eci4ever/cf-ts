@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
-import { betterAuth } from "better-auth";
+import { APIError, betterAuth } from "better-auth";
+import { createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin, organization, twoFactor } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
@@ -19,6 +20,7 @@ function createAuth() {
 		}),
 		emailAndPassword: {
 			enabled: true,
+			minPasswordLength: 10,
 			sendResetPassword: async ({ user, url }) => {				const brand = env.EMAIL_BRAND_NAME || "TapMe";
 				await sendEmail({
 					to: user.email,
@@ -66,6 +68,52 @@ function createAuth() {
 					max: 3,
 				},
 			],
+		},
+		hooks: {
+			before: createAuthMiddleware(async (ctx: { path: string; body?: { password?: unknown; newPassword?: unknown } }) => {
+				if (
+					ctx.path !== "/sign-up/email" &&
+					ctx.path !== "/change-password" &&
+					ctx.path !== "/reset-password"
+				) {
+					return;
+				}
+				const password =
+					(ctx.body as { password?: unknown; newPassword?: unknown })
+						?.password ??
+					(ctx.body as { newPassword?: unknown })?.newPassword;
+				if (typeof password !== "string") {
+					return;
+				}
+				if (password.length < 10) {
+					throw new APIError("BAD_REQUEST", {
+						message: "Password must be at least 10 characters",
+					});
+				}
+				if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+					throw new APIError("BAD_REQUEST", {
+						message: "Password must contain both letters and numbers",
+					});
+				}
+			}),
+		},
+		user: {
+			changeEmail: {
+				enabled: true,
+				sendChangeEmailConfirmation: async ({ newEmail, url }) => {
+					const brand = env.EMAIL_BRAND_NAME || "TapMe";
+					await sendEmail({
+						to: newEmail,
+						subject: `Confirm your new email address on ${brand}`,
+						html: `
+							<p>Hi,</p>
+							<p>A request was made to change the email address on a ${brand} account to this address.</p>
+							<p><a href="${url}">Confirm new email address</a></p>
+							<p>This link expires in 1 hour. If you didn't request this, you can ignore this email — the address will stay unchanged.</p>
+						`,
+					});
+				},
+			},
 		},
 		plugins: [
 			admin(),

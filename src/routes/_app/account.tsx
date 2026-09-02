@@ -135,6 +135,30 @@ function ProfileTab({
 			toast.error(error.message);
 		},
 	});
+	const [changeEmailOpen, setChangeEmailOpen] = useState(false);
+	const [newEmail, setNewEmail] = useState("");
+	const changeEmailMutation = useMutation({
+		mutationFn: async (input: { newEmail: string }) => {
+			const { error } = await authClient.changeEmail({
+				newEmail: input.newEmail,
+				callbackURL: "/account",
+			});
+			if (error) {
+				throw new Error(error.message ?? "Failed to change email");
+			}
+			return input.newEmail;
+		},
+		onSuccess: (sentTo) => {
+			toast.success(
+				`Verification email sent to ${sentTo} — confirm it to finish the change`,
+			);
+			setChangeEmailOpen(false);
+			setNewEmail("");
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
 	useEffect(() => {
 		setDisplayName(name);
@@ -211,13 +235,56 @@ function ProfileTab({
 							</Badge>
 						)}
 					</div>
-					{!emailVerified ? (
-						<Button variant="outline" onClick={handleVerifyEmail}>
-							{verifyEmailMutation.isPending ? "Sending..." : "Verify email"}
+					<div className="flex shrink-0 gap-2">
+						{!emailVerified ? (
+							<Button variant="outline" onClick={handleVerifyEmail}>
+								{verifyEmailMutation.isPending ? "Sending..." : "Verify email"}
+							</Button>
+						) : null}
+						<Button variant="outline" onClick={() => setChangeEmailOpen(true)}>
+							Change email
 						</Button>
-					) : null}
+					</div>
 				</CardContent>
 			</Card>
+
+			<Dialog open={changeEmailOpen} onOpenChange={setChangeEmailOpen}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Change email address</DialogTitle>
+						<DialogDescription>
+							We'll send a confirmation link to your new address. The change
+							only takes effect after you confirm it.
+						</DialogDescription>
+					</DialogHeader>
+					<form
+						onSubmit={(event) => {
+							event.preventDefault();
+							changeEmailMutation.mutate({ newEmail });
+						}}
+						className="flex flex-col gap-4"
+					>
+						<div className="flex flex-col gap-2">
+							<Label htmlFor="new-email">New email address</Label>
+							<Input
+								id="new-email"
+								type="email"
+								value={newEmail}
+								onChange={(event) => setNewEmail(event.target.value)}
+								placeholder="new.address@example.com"
+								required
+							/>
+						</div>
+						<DialogFooter>
+							<Button type="submit" disabled={changeEmailMutation.isPending}>
+								{changeEmailMutation.isPending
+									? "Sending..."
+									: "Send confirmation"}
+							</Button>
+						</DialogFooter>
+					</form>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }
