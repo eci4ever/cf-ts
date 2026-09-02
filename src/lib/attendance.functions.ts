@@ -1195,6 +1195,7 @@ export const submitJustification = createServerFn({ method: "POST" })
 				<p style="color:#555;">\"${justification}\"</p>
 			`,
 			"/attendance",
+			`Justification submitted for attendance issue on ${issue.date}`,
 		);
 		const [submitterEmployee] = await getDb()
 			.select({ userId: employee.userId })
@@ -1338,6 +1339,7 @@ export const verifyIssue = createServerFn({ method: "POST" })
 				${reviewNote ? `<p style="color:#555;">Reviewer's note: ${reviewNote}</p>` : ""}
 			`,
 			"/attendance",
+			`Justification for ${issue.date} was ${data.decision}${reviewNote ? ` — note: ${reviewNote}` : ""}`,
 		);
 		const [targetEmployee] = await getDb()
 			.select({ userId: employee.userId })

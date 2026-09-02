@@ -145,6 +145,7 @@ async function settleSubscription(
 				<p style="color:#555;">Paid until ${org.paidUntil.toLocaleDateString("en-MY")}</p>
 			`,
 			"/billing",
+			`Renewed on the ${PLANS[org.plan as PlanId].name} plan — charged ${formatRm(priceSen)}, new balance ${formatRm(org.balanceSen)}, paid until ${org.paidUntil.toLocaleDateString("en-MY")}`,
 		);
 	}
 
@@ -183,7 +184,8 @@ async function settleSubscription(
 				<p style="color:#b91c1c;"><strong>${org.name}</strong>'s subscription expired and the organization was downgraded to the <strong>Free</strong> plan (max 5 active employees).</p>
 				<p>Top up your credit and subscribe to a paid plan to restore full access.</p>
 			`,
-			"/billing",
+			`/billing`,
+			`${org.name} was downgraded to the Free plan (max 5 active employees) — top up and subscribe to restore full access`,
 		);
 	}
 
@@ -208,6 +210,7 @@ async function settleSubscription(
 				<p>Current balance: <strong>${formatRm(org.balanceSen)}</strong> — not enough for the next ${PLANS[org.plan as PlanId].name} renewal (${formatRm(PLANS[org.plan as PlanId].priceSen)}). Top up to avoid a downgrade to Free.</p>
 			`,
 			"/billing",
+			`Balance ${formatRm(org.balanceSen)} is not enough for the next ${PLANS[org.plan as PlanId].name} renewal (${formatRm(PLANS[org.plan as PlanId].priceSen)} due ${org.paidUntil.toLocaleDateString("en-MY")}) — top up to avoid downgrade`,
 		);
 	}
 }
@@ -653,6 +656,7 @@ export const decideTopupRequest = createServerFn({ method: "POST" })
 				${data.decision === "approved" ? "<p>The credit has been added to your organization balance.</p>" : ""}
 			`,
 			"/billing",
+			`Top-up of ${formatRm(request.amountSen)} (ref: ${request.paymentRef}) was ${data.decision}${data.decision === "approved" ? " — credit added to your balance" : ""}`,
 		);
 		await logAudit({
 			organizationId: request.organizationId,

@@ -1,5 +1,6 @@
 import { AppSidebar } from "#/components/app-sidebar";
 import { MobileNavRail } from "#/components/mobile-nav-rail";
+import { NotificationBell } from "#/components/notification-bell";
 import { ThemeToggle } from "#/components/theme-toggle";
 import {
 	Breadcrumb,
@@ -41,7 +42,8 @@ export function PageShell({
 							</BreadcrumbList>
 						</Breadcrumb>
 					</div>
-					<div className="ml-auto px-4">
+					<div className="ml-auto flex items-center gap-1 px-4">
+						<NotificationBell />
 						<ThemeToggle />
 					</div>
 				</header>

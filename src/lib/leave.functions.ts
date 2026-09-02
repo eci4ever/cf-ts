@@ -476,6 +476,7 @@ export const applyLeave = createServerFn({ method: "POST" })
 				<p style="color:#555;">Reason: ${data.reason.trim()}</p>
 			`,
 			"/leave",
+			`${applicant?.name ?? "An employee"} applied for ${leaveTypeRow?.name ?? "leave"} — ${data.startDate} → ${data.endDate} (${quote.days} day${quote.days === 1 ? "" : "s"})`,
 		);
 		await logAudit({
 			organizationId: context.orgId,
@@ -697,6 +698,7 @@ export const decideLeave = createServerFn({ method: "POST" })
 				${data.reason?.trim() ? `<p style="color:#555;">Note from your approver: ${data.reason.trim()}</p>` : ""}
 			`,
 			"/leave",
+			`Leave ${request.startDate}${request.endDate !== request.startDate ? ` → ${request.endDate}` : ""} was ${data.decision}${data.reason?.trim() ? ` — note: ${data.reason.trim()}` : ""}`,
 		);
 		const [targetEmployee] = await getDb()
 			.select({ userId: employee.userId })

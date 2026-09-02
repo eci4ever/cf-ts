@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "#/db";
-import { employee, member, organization, user } from "#/db/schema";
+import { employee, member, notification, organization, user } from "#/db/schema";
 import { sendEmail } from "./email";
 
 async function orgEmailNotificationsEnabled(orgId: string): Promise<boolean> {
@@ -32,6 +32,33 @@ function wrapHtml(bodyHtml: string, linkPath?: string): string {
 	`;
 }
 
+/**
+ * Record an in-app notification. Always written regardless of the org's email
+ * toggle — that toggle governs email only. Fails silently.
+ */
+async function pushInApp(
+	orgId: string,
+	userId: string | null,
+	title: string,
+	summary: string | undefined,
+	linkPath?: string,
+): Promise<void> {
+	if (!userId) return;
+	try {
+		await getDb().insert(notification).values({
+			id: crypto.randomUUID(),
+			organizationId: orgId,
+			userId,
+			title,
+			body: summary ?? null,
+			linkPath: linkPath ?? null,
+			createdAt: new Date(),
+		});
+	} catch {
+		// in-app delivery must never break the triggering operation
+	}
+}
+
 /** Email a linked user. Fails silently — notifications must never break operations. */
 async function notifyUser(
 	orgId: string,
@@ -39,7 +66,9 @@ async function notifyUser(
 	subject: string,
 	bodyHtml: string,
 	linkPath?: string,
+	summary?: string,
 ): Promise<void> {
+	await pushInApp(orgId, userId, subject, summary, linkPath);
 	if (!userId) return;
 	if (!(await orgEmailNotificationsEnabled(orgId))) return;
 	const [target] = await getDb()
@@ -55,30 +84,31 @@ async function notifyUser(
 	});
 }
 
-/** Email the employee's linked account (skipped when the employee has no account). */
+/** Notify the employee's linked account (skipped when the employee has no account). */
 export async function notifyEmployee(
 	orgId: string,
 	employeeId: string,
 	subject: string,
 	bodyHtml: string,
 	linkPath?: string,
+	summary?: string,
 ): Promise<void> {
 	const [row] = await getDb()
 		.select({ userId: employee.userId })
 		.from(employee)
 		.where(and(eq(employee.id, employeeId), eq(employee.organizationId, orgId)))
 		.limit(1);
-	await notifyUser(orgId, row?.userId ?? null, subject, bodyHtml, linkPath);
+	await notifyUser(orgId, row?.userId ?? null, subject, bodyHtml, linkPath, summary);
 }
 
-/** Email the org's owners and admins (respects the org's email toggle). */
+/** Notify the org's owners and admins (email respects the org's email toggle). */
 export async function notifyOrgAdmins(
 	orgId: string,
 	subject: string,
 	bodyHtml: string,
 	linkPath?: string,
+	summary?: string,
 ): Promise<void> {
-	if (!(await orgEmailNotificationsEnabled(orgId))) return;
 	const admins = await getDb()
 		.select({ userId: member.userId })
 		.from(member)
@@ -89,12 +119,12 @@ export async function notifyOrgAdmins(
 			),
 		);
 	for (const admin of admins) {
-		await notifyUser(orgId, admin.userId, subject, bodyHtml, linkPath);
+		await notifyUser(orgId, admin.userId, subject, bodyHtml, linkPath, summary);
 	}
 }
 
 /**
- * Email the employee's supervisor; falls back to org owners/admins when the
+ * Notify the employee's supervisor; falls back to org owners/admins when the
  * employee has no supervisor (or the supervisor has no linked account).
  */
 export async function notifySupervisors(
@@ -103,8 +133,8 @@ export async function notifySupervisors(
 	subject: string,
 	bodyHtml: string,
 	linkPath?: string,
+	summary?: string,
 ): Promise<void> {
-	if (!(await orgEmailNotificationsEnabled(orgId))) return;
 	const [row] = await getDb()
 		.select({ supervisorId: employee.supervisorId })
 		.from(employee)
@@ -117,7 +147,7 @@ export async function notifySupervisors(
 			.where(eq(employee.id, row.supervisorId))
 			.limit(1);
 		if (supervisor?.userId) {
-			await notifyUser(orgId, supervisor.userId, subject, bodyHtml, linkPath);
+			await notifyUser(orgId, supervisor.userId, subject, bodyHtml, linkPath, summary);
 			return;
 		}
 	}
@@ -131,6 +161,6 @@ export async function notifySupervisors(
 			),
 		);
 	for (const admin of admins) {
-		await notifyUser(orgId, admin.userId, subject, bodyHtml, linkPath);
+		await notifyUser(orgId, admin.userId, subject, bodyHtml, linkPath, summary);
 	}
 }

@@ -4,9 +4,9 @@ import { getRequestHeaders } from "@tanstack/react-start/server";
 import { getCurrentSession } from "./session";
 import { listUserAuditLogs } from "./audit.functions";
 import { alias } from "drizzle-orm/sqlite-core";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { getDb } from "#/db";
-import { auditLog, organization, user } from "#/db/schema";
+import { auditLog, notification, organization, user } from "#/db/schema";
 import { getAuth } from "./auth";
 
 export const getSession = createServerFn({ method: "GET" }).handler(
@@ -73,6 +73,78 @@ export const listMyActivity = createServerFn({ method: "GET" }).handler(
 			return [];
 		}
 		return listUserAuditLogs(session.user.id, 50);
+	},
+);
+
+export const listMyNotifications = createServerFn({ method: "GET" }).handler(
+	async () => {
+		const session = await getCurrentSession();
+		if (!session) {
+			return { items: [], unread: 0 };
+		}
+		const db = getDb();
+		const items = await db
+			.select({
+				id: notification.id,
+				title: notification.title,
+				body: notification.body,
+				linkPath: notification.linkPath,
+				readAt: notification.readAt,
+				createdAt: notification.createdAt,
+			})
+			.from(notification)
+			.where(eq(notification.userId, session.user.id))
+			.orderBy(desc(notification.createdAt))
+			.limit(50);
+		const [counts] = await db
+			.select({ unread: sql<number>`count(*)`.mapWith(Number) })
+			.from(notification)
+			.where(
+				and(
+					eq(notification.userId, session.user.id),
+					isNull(notification.readAt),
+				),
+			);
+		return { items, unread: counts?.unread ?? 0 };
+	},
+);
+
+export const markNotificationRead = createServerFn({ method: "POST" })
+	.validator((input: { id: string }) => input)
+	.handler(async ({ data }) => {
+		const session = await getCurrentSession();
+		if (!session) {
+			return { ok: false as const };
+		}
+		await getDb()
+			.update(notification)
+			.set({ readAt: new Date() })
+			.where(
+				and(
+					eq(notification.id, data.id),
+					eq(notification.userId, session.user.id),
+					isNull(notification.readAt),
+				),
+			);
+		return { ok: true as const };
+	});
+
+export const markAllNotificationsRead = createServerFn({ method: "POST" }).handler(
+	async () => {
+		const session = await getCurrentSession();
+		if (!session) {
+			return { ok: false as const };
+		}
+		await getDb()
+			.update(notification)
+			.set({ readAt: new Date() })
+			.where(
+				and(
+					eq(notification.userId, session.user.id),
+					isNull(notification.readAt),
+				),
+			);
+		return { ok: true as const };
 	},
 );
 

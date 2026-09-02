@@ -351,6 +351,21 @@ export const auditLog = sqliteTable("audit_log", {
 	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
+export const notification = sqliteTable("notification", {
+	id: text("id").primaryKey(),
+	organizationId: text("organization_id").references(() => organization.id, {
+		onDelete: "cascade",
+	}),
+	userId: text("user_id")
+		.notNull()
+		.references(() => user.id, { onDelete: "cascade" }),
+	title: text("title").notNull(),
+	body: text("body"),
+	linkPath: text("link_path"),
+	readAt: integer("read_at", { mode: "timestamp" }),
+	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
 export const member = sqliteTable("member", {
 	id: text("id").primaryKey(),
 	userId: text("user_id")
