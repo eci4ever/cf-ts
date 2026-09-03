@@ -366,6 +366,12 @@ export const notification = sqliteTable("notification", {
 	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
+export const cronState = sqliteTable("cron_state", {
+	key: text("key").primaryKey(),
+	value: text("value"),
+	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});
+
 export const member = sqliteTable("member", {
 	id: text("id").primaryKey(),
 	userId: text("user_id")

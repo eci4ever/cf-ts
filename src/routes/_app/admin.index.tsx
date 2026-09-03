@@ -1,5 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
@@ -10,7 +12,7 @@ import {
 	CardTitle,
 } from "#/components/ui/card";
 import { authClient } from "#/lib/auth-client";
-import { getPlatformStats } from "#/lib/admin.functions";
+import { getPlatformStats, runCronNow } from "#/lib/admin.functions";
 import { listOrgBilling } from "#/lib/billing.functions";
 
 export const Route = createFileRoute("/_app/admin/")({
@@ -72,6 +74,10 @@ function AdminOverviewPage() {
 
 	return (
 		<div className="flex flex-col gap-4">
+			<div className="flex items-center justify-between gap-2">
+				<h1 className="text-lg font-semibold">Platform overview</h1>
+				<CronButton />
+			</div>
 			{statsQuery.data ? <MetricsRow stats={statsQuery.data} /> : null}
 			<div className="grid gap-4 lg:grid-cols-2">
 				<Card>
@@ -158,6 +164,35 @@ function AdminOverviewPage() {
 					</CardContent>
 				</Card>
 			</div>
+		</div>
+	);
+}
+
+function CronButton() {
+	const [result, setResult] = useState<string | null>(null);
+	const cronMutation = useMutation({
+		mutationFn: runCronNow,
+		onSuccess: (result) => {
+			setResult(
+				`swept ${result.sweepOrgs} org(s) · ${result.clockIn} clock-in · ${result.clockOut} clock-out`,
+			);
+			toast.success("Cron run completed");
+		},
+		onError: (error) => toast.error(error.message),
+	});
+	return (
+		<div className="flex items-center gap-2">
+			{result ? (
+				<span className="text-xs text-muted-foreground">{result}</span>
+			) : null}
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={cronMutation.isPending}
+				onClick={() => cronMutation.mutate()}
+			>
+				{cronMutation.isPending ? "Running…" : "Run cron now"}
+			</Button>
 		</div>
 	);
 }

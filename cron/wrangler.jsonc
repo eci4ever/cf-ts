@@ -1,0 +1,21 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "cf-ts-cron",
+	"compatibility_date": "2025-09-02",
+	"compatibility_flags": ["nodejs_compat"],
+	"main": "worker.ts",
+	"triggers": {
+		"crons": ["*/15 * * * *"]
+	},
+	"observability": {
+		"enabled": true
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "cf-ts-db",
+			"database_id": "1b1c4b4b-770a-4d47-b27b-dfd33f04a058",
+			"migrations_dir": "../drizzle"
+		}
+	]
+}

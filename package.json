@@ -19,7 +19,9 @@
     "cf-typegen": "wrangler types",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply cf-ts-db --local",
-    "db:migrate:remote": "wrangler d1 migrations apply cf-ts-db --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply cf-ts-db --remote",
+    "deploy:cron": "wrangler deploy -c cron/wrangler.jsonc",
+    "deploy:all": "npm run build && wrangler deploy && npm run deploy:cron"
   },
   "dependencies": {
     "@faker-js/faker": "^10.3.0",

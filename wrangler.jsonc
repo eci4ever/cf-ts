@@ -10,6 +10,9 @@
 		"nodejs_compat"
 	],
 	"main": "@tanstack/react-start/server-entry",
+	"triggers": {
+		"crons": ["*/15 * * * *"]
+	},
 	"routes": [
 		{
 			"pattern": "tapme.nimfi.dev",

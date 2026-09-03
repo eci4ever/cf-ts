@@ -136,3 +136,14 @@ export const listOrgLedger = createServerFn({ method: "GET" })
 			.orderBy(desc(creditLedger.createdAt))
 			.limit(50);
 	});
+
+export const runCronNow = createServerFn({ method: "POST" }).handler(
+	async () => {
+		await requirePlatformAdmin();
+		// Specifier assembled at runtime so the client build does not bundle
+		// the cron module into the browser graph.
+		const cronPath = "./cron" + ".jobs";
+		const { runCron } = await import(cronPath);
+		return runCron(new Date());
+	},
+);
