@@ -37,6 +37,36 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const GRACE_MS = GRACE_DAYS * DAY_MS;
 export const WARN_MS = WARN_DAYS * DAY_MS;
 
+type SubscriptionOrg = {
+	plan: string;
+	pendingPlan?: string | null;
+	paidUntil: Date | null;
+	balanceSen: number;
+};
+
+/** Lives here (not in billing.functions) so client-safe modules can import it
+ * without pulling the server-only `#/db` graph into the client bundle. */
+export function statusFor(
+	org: SubscriptionOrg,
+	now: Date,
+): SubscriptionStatus {
+	if (org.plan === "free" || !org.paidUntil) {
+		return "active";
+	}
+	const paidUntilMs = org.paidUntil.getTime();
+	const nowMs = now.getTime();
+	if (paidUntilMs <= nowMs) {
+		return "grace";
+	}
+	if (
+		org.balanceSen < PLANS[org.plan as PlanId].priceSen &&
+		paidUntilMs - nowMs <= WARN_MS
+	) {
+		return "warning";
+	}
+	return "active";
+}
+
 export function addMonths(date: Date, months: number): Date {
 	const result = new Date(date.getTime());
 	const day = result.getDate();

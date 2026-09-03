@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { and, asc, desc, eq, gt, lt, ne, sql } from "drizzle-orm";
 import { getDb } from "#/db";
 import { creditLedger, employee, member, organization, user } from "#/db/schema";
-import { statusFor } from "./billing.functions";
+import { statusFor } from "./subscription";
 import { type SubscriptionStatus } from "./subscription";
 import { getCurrentSession } from "./session";
 

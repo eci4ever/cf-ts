@@ -21,8 +21,8 @@ import {
 	PLANS,
 	type PlanId,
 	SUBSCRIPTION_MONTHS,
+	statusFor,
 	type SubscriptionStatus,
-	WARN_MS,
 } from "./subscription";
 
 export type SubscriptionState = {
@@ -74,24 +74,6 @@ async function persistOrgState(org: OrganizationRow): Promise<void> {
 			paidUntil: org.paidUntil,
 		})
 		.where(eq(organization.id, org.id));
-}
-
-export function statusFor(org: OrganizationRow, now: Date): SubscriptionStatus {
-	if (org.plan === "free" || !org.paidUntil) {
-		return "active";
-	}
-	const paidUntilMs = org.paidUntil.getTime();
-	const nowMs = now.getTime();
-	if (paidUntilMs <= nowMs) {
-		return "grace";
-	}
-	if (
-		org.balanceSen < PLANS[org.plan as PlanId].priceSen &&
-		paidUntilMs - nowMs <= WARN_MS
-	) {
-		return "warning";
-	}
-	return "active";
 }
 
 async function settleSubscription(
