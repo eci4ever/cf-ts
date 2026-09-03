@@ -6,7 +6,7 @@ import {
 	getSortedRowModel,
 	useReactTable,
 } from "@tanstack/react-table";
-import { MoreHorizontal, Plus, UserRoundCog } from "lucide-react";
+import { CalendarClock, MoreHorizontal, Plus, UserRoundCog } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DataTable, SortableHeader } from "#/components/data-table/data-table";
@@ -49,11 +49,13 @@ import {
 	listEmployees,
 	listLinkableMembers,
 	setEmployeeActive,
+	setEmployeeSchedule,
 	suggestEmployeeNo,
 	updateEmployee,
 } from "#/lib/employees.functions";
 import { getGeofenceSettings } from "#/lib/geofence.functions";
 import { getMyOrgRole } from "#/lib/org.functions";
+import { getOrgSettings } from "#/lib/org-settings.functions";
 
 export const Route = createFileRoute("/_app/employees")({
 	staticData: { title: "Employees" },
@@ -78,9 +80,30 @@ type EmployeeRow = {
 	supervisorName: string | null;
 	siteId: string | null;
 	siteName: string | null;
+	workDays: string | null;
+	workStartMinutes: number | null;
+	workEndMinutes: number | null;
+	graceMinutes: number | null;
 	linkedEmail: string | null;
 	linkedName: string | null;
 };
+
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function hasScheduleOverride(employee: EmployeeRow): boolean {
+	return (
+		employee.workDays !== null ||
+		employee.workStartMinutes !== null ||
+		employee.workEndMinutes !== null ||
+		employee.graceMinutes !== null
+	);
+}
+
+function minutesToTime(minutes: number): string {
+	return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(
+		minutes % 60,
+	).padStart(2, "0")}`;
+}
 
 type EmployeeForm = {
 	id?: string;
@@ -99,9 +122,14 @@ function EmployeesPage() {
 	const [formOpen, setFormOpen] = useState(false);
 	const [editing, setEditing] = useState<EmployeeRow | null>(null);
 	const [initialMemberId, setInitialMemberId] = useState<string | null>(null);
+	const [scheduleTarget, setScheduleTarget] = useState<EmployeeRow | null>(null);
 	const employeesQuery = useQuery({
 		queryKey: ["employees", "list"],
 		queryFn: listEmployees,
+	});
+	const settingsQuery = useQuery({
+		queryKey: ["org", "settings"],
+		queryFn: getOrgSettings,
 	});
 	const linkableQuery = useQuery({
 		queryKey: ["employees", "linkable"],
@@ -150,6 +178,10 @@ function EmployeesPage() {
 		setFormOpen(true);
 	}, []);
 
+	const openSchedule = useCallback((employee: EmployeeRow) => {
+		setScheduleTarget(employee);
+	}, []);
+
 	function handleSaved() {
 		setFormOpen(false);
 		toast.success(editing ? "Employee updated" : "Employee added");
@@ -177,6 +209,18 @@ function EmployeesPage() {
 			},
 			{
 				accessorKey: "name",
+				cell: ({ row }) => (
+					<span className="flex items-center gap-1.5">
+						{row.original.name}
+						{hasScheduleOverride(row.original) ? (
+							<CalendarClock
+								role="img"
+								className="size-3.5 text-muted-foreground"
+								aria-label="Has a custom schedule"
+							/>
+						) : null}
+					</span>
+				),
 				header: ({ column }) => <SortableHeader column={column} title="Name" />,
 			},
 			{ accessorKey: "position", header: "Position" },
@@ -245,6 +289,10 @@ function EmployeesPage() {
 									<UserRoundCog />
 									Edit / link
 								</DropdownMenuItem>
+								<DropdownMenuItem onClick={() => openSchedule(employee)}>
+									<CalendarClock />
+									Schedule
+								</DropdownMenuItem>
 								<DropdownMenuItem onClick={() => handleToggleActive(employee)}>
 									{employee.isActive ? "Deactivate" : "Activate"}
 								</DropdownMenuItem>
@@ -255,7 +303,7 @@ function EmployeesPage() {
 			},
 		],
 		// handlers are stable enough for display purposes; form state lives outside
-		[openEdit, handleToggleActive],
+		[openEdit, openSchedule, handleToggleActive],
 	);
 
 	const table = useReactTable({
@@ -313,7 +361,221 @@ function EmployeesPage() {
 				}}
 				onSaved={handleSaved}
 			/>
+			<ScheduleDialog
+				employee={scheduleTarget}
+				orgSchedule={settingsQuery.data?.schedule ?? null}
+				onClose={() => setScheduleTarget(null)}
+				onSaved={async () => {
+					toast.success(
+						scheduleTarget
+							? `Schedule updated for ${scheduleTarget.name}`
+							: "Schedule updated",
+					);
+					setScheduleTarget(null);
+					await queryClient.refetchQueries({ queryKey: ["employees"] });
+				}}
+			/>
 		</div>
+	);
+}
+
+function ScheduleDialog({
+	employee,
+	orgSchedule,
+	onClose,
+	onSaved,
+}: {
+	employee: EmployeeRow | null;
+	orgSchedule: {
+		workDays: number[];
+		workStartMinutes: number;
+		workEndMinutes: number;
+		graceMinutes: number;
+	} | null;
+	onClose: () => void;
+	onSaved: () => void;
+}) {
+	const open = employee !== null && orgSchedule !== null;
+	const [useOrgDays, setUseOrgDays] = useState(true);
+	const [useOrgTimes, setUseOrgTimes] = useState(true);
+	const [useOrgGrace, setUseOrgGrace] = useState(true);
+	const [days, setDays] = useState<number[]>([]);
+	const [startTime, setStartTime] = useState("09:00");
+	const [endTime, setEndTime] = useState("18:00");
+	const [grace, setGrace] = useState("15");
+
+	// reseed the form from the employee's effective schedule on every open
+	useEffect(() => {
+		if (!employee || !orgSchedule) return;
+		setUseOrgDays(employee.workDays === null);
+		setDays(
+			(employee.workDays ?? orgSchedule.workDays.join(","))
+				.split(",")
+				.map(Number),
+		);
+		setUseOrgTimes(
+			employee.workStartMinutes === null && employee.workEndMinutes === null,
+		);
+		setStartTime(
+			minutesToTime(employee.workStartMinutes ?? orgSchedule.workStartMinutes),
+		);
+		setEndTime(
+			minutesToTime(employee.workEndMinutes ?? orgSchedule.workEndMinutes),
+		);
+		setUseOrgGrace(employee.graceMinutes === null);
+		setGrace(String(employee.graceMinutes ?? orgSchedule.graceMinutes));
+	}, [employee, orgSchedule]);
+
+	const mutation = useMutation({
+		mutationFn: async () => {
+			if (!employee) {
+				throw new Error("No employee selected");
+			}
+			const result = await setEmployeeSchedule({
+				data: {
+					employeeId: employee.id,
+					workDays: useOrgDays ? null : days,
+					startTime: useOrgTimes ? null : startTime,
+					endTime: useOrgTimes ? null : endTime,
+					graceMinutes: useOrgGrace ? null : Number(grace),
+				},
+			});
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: onSaved,
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
+
+	const toggleDay = (day: number) => {
+		setDays((previous) =>
+			previous.includes(day)
+				? previous.filter((value) => value !== day)
+				: [...previous, day].sort(),
+		);
+	};
+
+	const orgDaysLabel = orgSchedule
+		? orgSchedule.workDays.map((day) => DAY_LABELS[day]).join(" ")
+		: "";
+
+	return (
+		<Dialog open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
+			<DialogContent className="sm:max-w-md">
+				<DialogHeader>
+					<DialogTitle>Schedule — {employee?.name}</DialogTitle>
+					<DialogDescription>
+						Anything left on "Org default" follows the organization schedule
+						{orgSchedule
+							? ` (${orgDaysLabel} · ${minutesToTime(orgSchedule.workStartMinutes)}–${minutesToTime(orgSchedule.workEndMinutes)} · grace ${orgSchedule.graceMinutes}m)`
+							: ""}.
+						Late detection, reminders, reports and leave counting all use the
+						resolved schedule.
+					</DialogDescription>
+				</DialogHeader>
+				<div className="flex flex-col gap-4">
+					<div className="flex flex-col gap-2">
+						<div className="flex items-center justify-between">
+							<Label>Work days</Label>
+							<label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+								<input
+									type="checkbox"
+									className="size-4 accent-teal-600"
+									checked={useOrgDays}
+									onChange={(event) => setUseOrgDays(event.target.checked)}
+								/>
+								Org default
+							</label>
+						</div>
+						<div className="flex flex-wrap gap-2">
+							{DAY_LABELS.map((label, index) => (
+								<Button
+									key={label}
+									type="button"
+									variant={
+										!useOrgDays && days.includes(index) ? "default" : "outline"
+									}
+									size="sm"
+									disabled={useOrgDays}
+									onClick={() => toggleDay(index)}
+								>
+									{label}
+								</Button>
+							))}
+						</div>
+					</div>
+					<div className="flex flex-col gap-2">
+						<div className="flex items-center justify-between">
+							<Label>Work hours</Label>
+							<label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+								<input
+									type="checkbox"
+									className="size-4 accent-teal-600"
+									checked={useOrgTimes}
+									onChange={(event) => setUseOrgTimes(event.target.checked)}
+								/>
+								Org default
+							</label>
+						</div>
+						<div className="flex gap-2">
+							<Input
+								type="time"
+								value={startTime}
+								disabled={useOrgTimes}
+								onChange={(event) => setStartTime(event.target.value)}
+								aria-label="Start time"
+							/>
+							<Input
+								type="time"
+								value={endTime}
+								disabled={useOrgTimes}
+								onChange={(event) => setEndTime(event.target.value)}
+								aria-label="End time"
+							/>
+						</div>
+					</div>
+					<div className="flex flex-col gap-2">
+						<div className="flex items-center justify-between">
+							<Label htmlFor="emp-grace">Grace (minutes)</Label>
+							<label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+								<input
+									type="checkbox"
+									className="size-4 accent-teal-600"
+									checked={useOrgGrace}
+									onChange={(event) => setUseOrgGrace(event.target.checked)}
+								/>
+								Org default
+							</label>
+						</div>
+						<Input
+							id="emp-grace"
+							type="number"
+							min={0}
+							max={240}
+							value={grace}
+							disabled={useOrgGrace}
+							onChange={(event) => setGrace(event.target.value)}
+						/>
+					</div>
+				</div>
+				<DialogFooter>
+					<Button type="button" variant="outline" onClick={onClose}>
+						Cancel
+					</Button>
+					<Button
+						type="button"
+						disabled={mutation.isPending}
+						onClick={() => mutation.mutate()}
+					>
+						{mutation.isPending ? "Saving..." : "Save schedule"}
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
 	);
 }
 

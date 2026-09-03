@@ -9,7 +9,7 @@ import {
 } from "#/db/schema";
 import { syncIssues } from "./attendance-sync";
 import { notifyEmployee } from "./notify";
-import { formatZonedDate, getZonedParts } from "./schedule";
+import { formatZonedDate, getZonedParts, resolveSchedule } from "./schedule";
 
 const TICK_MINUTES = 15;
 const CLOCK_OUT_REMINDER_AFTER_MINUTES = 30;
@@ -50,7 +50,13 @@ async function runAbsentSweep(now: Date): Promise<number> {
 			continue;
 		}
 		const activeEmployees = await db
-			.select({ id: employee.id })
+			.select({
+				id: employee.id,
+				workDays: employee.workDays,
+				workStartMinutes: employee.workStartMinutes,
+				workEndMinutes: employee.workEndMinutes,
+				graceMinutes: employee.graceMinutes,
+			})
 			.from(employee)
 			.where(
 				and(eq(employee.organizationId, org.id), eq(employee.isActive, true)),
@@ -73,6 +79,17 @@ async function runAbsentSweep(now: Date): Promise<number> {
 				orgId: org.id,
 				employeeIds: activeEmployees.map((row) => row.id),
 				workDays: org.workDays.split(",").map(Number),
+				overrides: new Map(
+					activeEmployees.map((row) => [
+						row.id,
+						{
+							workDays: row.workDays,
+							workStartMinutes: row.workStartMinutes,
+							workEndMinutes: row.workEndMinutes,
+							graceMinutes: row.graceMinutes,
+						},
+					]),
+				),
 				timezone: org.timezone,
 				monthStart,
 			});
@@ -97,25 +114,17 @@ async function runReminders(
 	let clockOutSent = 0;
 	for (const org of orgs) {
 		const parts = getZonedParts(now, org.timezone);
-		const workDays = org.workDays.split(",").map(Number);
-		if (!workDays.includes(parts.weekday)) {
-			continue;
-		}
 		const today = formatZonedDate(now, org.timezone);
-		const graceEnd = org.workStartMinutes + org.graceMinutes;
-		const clockOutTarget = org.workEndMinutes + CLOCK_OUT_REMINDER_AFTER_MINUTES;
-		const inClockInWindow =
-			parts.minutesSinceMidnight >= graceEnd &&
-			parts.minutesSinceMidnight < graceEnd + TICK_MINUTES;
-		const inClockOutWindow =
-			parts.minutesSinceMidnight >= clockOutTarget &&
-			parts.minutesSinceMidnight < clockOutTarget + TICK_MINUTES;
-		if (!inClockInWindow && !inClockOutWindow) {
-			continue;
-		}
 
 		const employees = await db
-			.select({ id: employee.id, userId: employee.userId })
+			.select({
+				id: employee.id,
+				userId: employee.userId,
+				workDays: employee.workDays,
+				workStartMinutes: employee.workStartMinutes,
+				workEndMinutes: employee.workEndMinutes,
+				graceMinutes: employee.graceMinutes,
+			})
 			.from(employee)
 			.where(
 				and(eq(employee.organizationId, org.id), eq(employee.isActive, true)),
@@ -123,7 +132,38 @@ async function runReminders(
 		if (employees.length === 0) {
 			continue;
 		}
-		const employeeIds = employees.map((row) => row.id);
+		// each employee's reminder windows follow their resolved schedule, so
+		// one tick can hit different employees' windows
+		const scheduled = employees
+			.map((row) => ({
+				row,
+				schedule: resolveSchedule(row, org),
+			}))
+			.filter(({ schedule }) => schedule.workDays.includes(parts.weekday))
+			.map(({ row, schedule }) => ({
+				row,
+				schedule,
+				clockIn: {
+					from: schedule.workStartMinutes + schedule.graceMinutes,
+					to: schedule.workStartMinutes + schedule.graceMinutes + TICK_MINUTES,
+				},
+				clockOut: {
+					from: schedule.workEndMinutes + CLOCK_OUT_REMINDER_AFTER_MINUTES,
+					to:
+						schedule.workEndMinutes + CLOCK_OUT_REMINDER_AFTER_MINUTES + TICK_MINUTES,
+				},
+			}))
+			.filter(
+				({ clockIn, clockOut }) =>
+					(parts.minutesSinceMidnight >= clockIn.from &&
+						parts.minutesSinceMidnight < clockIn.to) ||
+					(parts.minutesSinceMidnight >= clockOut.from &&
+						parts.minutesSinceMidnight < clockOut.to),
+			);
+		if (scheduled.length === 0) {
+			continue;
+		}
+		const employeeIds = scheduled.map(({ row }) => row.id);
 
 		const records = await db
 			.select({
@@ -166,10 +206,16 @@ async function runReminders(
 				.map((row) => row.employeeId),
 		);
 
-		for (const employee of employees) {
+		for (const { row: employee, clockIn, clockOut } of scheduled) {
 			if (!employee.userId || onLeave.has(employee.id)) {
 				continue;
 			}
+			const inClockInWindow =
+				parts.minutesSinceMidnight >= clockIn.from &&
+				parts.minutesSinceMidnight < clockIn.to;
+			const inClockOutWindow =
+				parts.minutesSinceMidnight >= clockOut.from &&
+				parts.minutesSinceMidnight < clockOut.to;
 			if (
 				inClockInWindow &&
 				!clockedIn.has(employee.id) &&

@@ -193,6 +193,11 @@ export const employee = sqliteTable(
 		employeeNo: text("employee_no").notNull(),
 		position: text("position"),
 		shift: text("shift").notNull().default("normal"),
+		// per-employee schedule overrides — null falls back to the org default
+		workDays: text("work_days"),
+		workStartMinutes: integer("work_start_minutes"),
+		workEndMinutes: integer("work_end_minutes"),
+		graceMinutes: integer("grace_minutes"),
 		joinedAt: integer("joined_at", { mode: "timestamp" }),
 		isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
 		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),

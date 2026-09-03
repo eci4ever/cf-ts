@@ -7,12 +7,14 @@ import {
 } from "#/db/schema";
 import { deriveIssues } from "./leave";
 import { getHolidayDates } from "./holidays";
-import { formatZonedDate } from "./schedule";
+import { formatZonedDate, type ScheduleOverride } from "./schedule";
 
 export async function syncIssues(options: {
 	orgId: string;
 	employeeIds: string[];
+	// org default; employees with their own work_days override use that instead
 	workDays: number[];
+	overrides?: Map<string, ScheduleOverride>;
 	timezone: string;
 	monthStart?: string;
 }): Promise<void> {
@@ -80,6 +82,13 @@ export async function syncIssues(options: {
 		type: string;
 	}[] = [];
 	for (const employeeId of options.employeeIds) {
+		const override = options.overrides?.get(employeeId);
+		const workDays = override?.workDays
+			? override.workDays
+					.split(",")
+					.map(Number)
+					.filter((day) => day >= 0 && day <= 6)
+			: options.workDays;
 		const derivedForEmployee = deriveIssues({
 			records: recordsByEmployee.get(employeeId) ?? [],
 			leaveCoveredDates: new Set(
@@ -87,7 +96,7 @@ export async function syncIssues(options: {
 					.filter((key) => key.startsWith(`${employeeId}:`))
 					.map((key) => key.split(":")[1]),
 			),
-			workDays: options.workDays,
+			workDays,
 			holidayDates,
 			rangeStart: monthStart,
 			rangeEnd: today,

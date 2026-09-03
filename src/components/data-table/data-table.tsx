@@ -1,3 +1,9 @@
+// React Compiler auto-memoization freezes this component's cells: the
+// TanStack table instance keeps a stable reference across data refetches,
+// so every prop looks unchanged and re-renders get skipped even though the
+// underlying row model just changed.
+"use no memo";
+
 import {
 	type Column,
 	flexRender,

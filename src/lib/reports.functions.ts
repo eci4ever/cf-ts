@@ -59,7 +59,12 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 		const monthStart = `${data.year}-${pad(data.month)}-01`;
 		const monthEnd = lastDayOfMonth(data.year, data.month);
 
-		let targets: { id: string; name: string; employeeNo: string }[] = [];
+		let targets: {
+			id: string;
+			name: string;
+			employeeNo: string;
+			workDays: string | null;
+		}[] = [];
 		let scope: "all" | "subordinates" | "self" | "none" = "none";
 		if (isAdmin) {
 			targets = await getDb()
@@ -67,6 +72,7 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 					id: employee.id,
 					name: employee.name,
 					employeeNo: employee.employeeNo,
+					workDays: employee.workDays,
 				})
 				.from(employee)
 				.where(
@@ -83,6 +89,7 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 					id: employee.id,
 					name: employee.name,
 					employeeNo: employee.employeeNo,
+					workDays: employee.workDays,
 				})
 				.from(employee)
 				.where(
@@ -100,6 +107,7 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 					id: employee.id,
 					name: employee.name,
 					employeeNo: employee.employeeNo,
+					workDays: employee.workDays,
 				})
 				.from(employee)
 				.where(eq(employee.id, context.employee.id))
@@ -141,6 +149,16 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 			}[]
 		> = {};
 		const targetIds = targets.map((row) => row.id);
+		// each employee's day counting follows their own work days when overridden
+		const workDaysByEmployee = new Map(
+			targets.map((row) => [
+				row.id,
+				(row.workDays ?? context.org.workDays)
+					.split(",")
+					.map(Number)
+					.filter((value) => value >= 0 && value <= 6),
+			]),
+		);
 		if (targetIds.length > 0) {
 			const records = await getDb()
 				.select({
@@ -213,7 +231,12 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 					covered.add(day);
 				}
 				leaveCoveredByEmployee.set(request.employeeId, covered);
-				const days = countWorkingDays(start, end, workDays, holidayDates);
+				const days = countWorkingDays(
+					start,
+					end,
+					workDaysByEmployee.get(request.employeeId) ?? workDays,
+					holidayDates,
+				);
 				const key = `${request.employeeId}:${request.leaveTypeId}`;
 				leaveDaysByEmployeeType.set(
 					key,
@@ -235,7 +258,12 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 				usedByEmployeeType.set(
 					key,
 					(usedByEmployeeType.get(key) ?? 0) +
-						countWorkingDays(start, end, workDays, holidayDates),
+						countWorkingDays(
+							start,
+							end,
+							workDaysByEmployee.get(row.employeeId) ?? workDays,
+							holidayDates,
+						),
 				);
 			}
 
@@ -272,11 +300,12 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 
 			for (const target of targets) {
 				const recs = recordsByEmployee.get(target.id) ?? [];
+				const targetWorkDays = workDaysByEmployee.get(target.id) ?? workDays;
 			const issues = deriveIssues({
 				records: recs,
 				leaveCoveredDates:
 					leaveCoveredByEmployee.get(target.id) ?? new Set<string>(),
-				workDays,
+				workDays: targetWorkDays,
 				holidayDates,
 				rangeStart: monthStart,
 				rangeEnd: monthEnd,
@@ -298,7 +327,7 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 					workingDays: countWorkingDays(
 						monthStart,
 						monthEnd,
-						workDays,
+						targetWorkDays,
 						holidayDates,
 					),
 					present: recs.length,
@@ -352,7 +381,7 @@ export const getMonthlyReport = createServerFn({ method: "GET" })
 						note: null as string | null,
 					};
 					const record = recordByDate.get(date);
-					if (!workDays.includes(weekdayOf(date))) {
+					if (!targetWorkDays.includes(weekdayOf(date))) {
 						daily.push({ ...base, status: "off" });
 						continue;
 					}

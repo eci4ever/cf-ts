@@ -26,7 +26,9 @@ import {
 	formatZonedDate,
 	getZonedParts,
 	parseTimeToMinutes,
+	resolveSchedule,
 	type Schedule,
+	type ScheduleOverride,
 	type Shift,
 	zonedWallTimeToUtc,
 } from "./schedule";
@@ -41,12 +43,9 @@ type OrgRow = {
 	timezone: string;
 };
 
-function scheduleFromOrg(org: OrgRow): Schedule {
+function scheduleFromOrg(org: OrgRow, override: ScheduleOverride | null = null): Schedule {
 	return {
-		workDays: org.workDays.split(",").map(Number),
-		workStartMinutes: org.workStartMinutes,
-		workEndMinutes: org.workEndMinutes,
-		graceMinutes: org.graceMinutes,
+		...resolveSchedule(override, org),
 		timezone: org.timezone,
 	};
 }
@@ -75,6 +74,10 @@ async function getOrgAndEmployee() {
 			shift: employee.shift,
 			isActive: employee.isActive,
 			siteId: employee.siteId,
+			workDays: employee.workDays,
+			workStartMinutes: employee.workStartMinutes,
+			workEndMinutes: employee.workEndMinutes,
+			graceMinutes: employee.graceMinutes,
 		})
 		.from(employee)
 		.where(
@@ -84,11 +87,13 @@ async function getOrgAndEmployee() {
 			),
 		)
 		.limit(1);
+	const activeEmployee = linked && linked.isActive ? linked : null;
 	return {
 		session,
 		org,
-		schedule: scheduleFromOrg(org),
-		employee: linked && linked.isActive ? linked : null,
+		// the employee's own schedule overrides when present, org default otherwise
+		schedule: scheduleFromOrg(org, activeEmployee),
+		employee: activeEmployee,
 	};
 }
 
@@ -838,7 +843,14 @@ export const adminUpsertAttendance = createServerFn({ method: "POST" })
 			return { ok: false as const, reason: "Invalid date" };
 		}
 		const [emp] = await getDb()
-			.select({ id: employee.id, shift: employee.shift })
+			.select({
+				id: employee.id,
+				shift: employee.shift,
+				workDays: employee.workDays,
+				workStartMinutes: employee.workStartMinutes,
+				workEndMinutes: employee.workEndMinutes,
+				graceMinutes: employee.graceMinutes,
+			})
 			.from(employee)
 			.where(
 				and(
@@ -855,7 +867,7 @@ export const adminUpsertAttendance = createServerFn({ method: "POST" })
 			.from(organization)
 			.where(eq(organization.id, orgId))
 			.limit(1);
-		const schedule = scheduleFromOrg(org);
+		const schedule = scheduleFromOrg(org, emp);
 		const clockIn = zonedWallTimeToUtc(
 			data.date,
 			clockInMinutes,
@@ -961,6 +973,7 @@ export const listMyIssues = createServerFn({ method: "GET" }).handler(
 			orgId: context.orgId,
 			employeeIds: [context.employee.id],
 			workDays: context.org.workDays.split(",").map(Number),
+			overrides: new Map([[context.employee.id, context.employee]]),
 			timezone: context.org.timezone,
 		});
 		return getDb()
@@ -1070,15 +1083,31 @@ export const listIssuesForReview = createServerFn({ method: "GET" }).handler(
 			return { issues: [], scope: "none" as const };
 		}
 		const context = (await getOrgMemberContext())!;
-		const employeeIds =
+		const scopedEmployees =
 			scope.scope === "all"
-				? (
-						await getDb()
-							.select({ id: employee.id })
+				? await getDb()
+						.select({
+							id: employee.id,
+							workDays: employee.workDays,
+							workStartMinutes: employee.workStartMinutes,
+							workEndMinutes: employee.workEndMinutes,
+							graceMinutes: employee.graceMinutes,
+						})
+						.from(employee)
+						.where(eq(employee.organizationId, context.orgId))
+				: scope.employeeIds.length > 0
+					? await getDb()
+							.select({
+								id: employee.id,
+								workDays: employee.workDays,
+								workStartMinutes: employee.workStartMinutes,
+								workEndMinutes: employee.workEndMinutes,
+								graceMinutes: employee.graceMinutes,
+							})
 							.from(employee)
-							.where(eq(employee.organizationId, context.orgId))
-					).map((row) => row.id)
-				: scope.employeeIds;
+							.where(inArray(employee.id, scope.employeeIds))
+					: [];
+		const employeeIds = scopedEmployees.map((row) => row.id);
 		if (employeeIds.length === 0) {
 			return { issues: [], scope: scope.scope };
 		}
@@ -1086,6 +1115,7 @@ export const listIssuesForReview = createServerFn({ method: "GET" }).handler(
 			orgId: context.orgId,
 			employeeIds,
 			workDays: context.org.workDays.split(",").map(Number),
+			overrides: new Map(scopedEmployees.map((row) => [row.id, row])),
 			timezone: context.org.timezone,
 		});
 		const issues = await getDb()

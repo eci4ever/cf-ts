@@ -30,10 +30,6 @@ export const getOrgDashboardStats = createServerFn({ method: "GET" }).handler(
 		const today = formatZonedDate(new Date(), context.org.timezone);
 		const [year, month, day] = today.split("-").map(Number);
 		const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-		const isWorkDay = context.org.workDays
-			.split(",")
-			.map(Number)
-			.includes(weekday);
 
 		const scopeWhere = isAdmin
 			? and(
@@ -46,11 +42,21 @@ export const getOrgDashboardStats = createServerFn({ method: "GET" }).handler(
 					eq(employee.isActive, true),
 				);
 		const targets = await getDb()
-			.select({ id: employee.id })
+			.select({
+				id: employee.id,
+				workDays: employee.workDays,
+			})
 			.from(employee)
 			.where(scopeWhere);
 		const targetIds = targets.map((row) => row.id);
 		const totalEmployees = targetIds.length;
+		// an employee's own work days decide whether today counts for them
+		const worksToday = (workDaysOverride: string | null) =>
+			(workDaysOverride ?? context.org.workDays)
+				.split(",")
+				.map(Number)
+				.includes(weekday);
+		const isWorkDay = targets.some((row) => worksToday(row.workDays));
 
 		let presentToday = 0;
 		let lateToday = 0;
@@ -75,8 +81,12 @@ export const getOrgDashboardStats = createServerFn({ method: "GET" }).handler(
 		let onLeaveToday = 0;
 		if (targetIds.length > 0 && isWorkDay) {
 			const leaves = await getDb()
-				.select({ employeeId: leaveRequest.employeeId })
+				.select({
+					employeeId: leaveRequest.employeeId,
+					workDays: employee.workDays,
+				})
 				.from(leaveRequest)
+				.innerJoin(employee, eq(employee.id, leaveRequest.employeeId))
 				.where(
 					and(
 						eq(leaveRequest.organizationId, context.orgId),
@@ -86,7 +96,11 @@ export const getOrgDashboardStats = createServerFn({ method: "GET" }).handler(
 						gte(leaveRequest.endDate, today),
 					),
 				);
-			onLeaveToday = new Set(leaves.map((row) => row.employeeId)).size;
+			onLeaveToday = new Set(
+				leaves
+					.filter((row) => worksToday(row.workDays))
+					.map((row) => row.employeeId),
+			).size;
 		}
 
 		return { presentToday, onLeaveToday, lateToday, totalEmployees };
@@ -124,13 +138,25 @@ export const getOrgAttendanceTrend = createServerFn({ method: "GET" }).handler(
 					eq(employee.isActive, true),
 				);
 		const targets = await getDb()
-			.select({ id: employee.id })
+			.select({
+				id: employee.id,
+				workDays: employee.workDays,
+			})
 			.from(employee)
 			.where(scopeWhere);
 		const targetIds = targets.map((row) => row.id);
 		if (targetIds.length === 0) {
 			return { weeks: [] };
 		}
+		const workDaysByEmployee = new Map(
+			targets.map((row) => [
+				row.id,
+				(row.workDays ?? context.org.workDays)
+					.split(",")
+					.map(Number)
+					.filter((value) => value >= 0 && value <= 6),
+			]),
+		);
 
 		const WEEKS = 6;
 		const currentWeekStartUtc =
@@ -169,26 +195,30 @@ export const getOrgAttendanceTrend = createServerFn({ method: "GET" }).handler(
 					gte(leaveRequest.endDate, rangeStart),
 				),
 			);
-		const leaveDates: string[] = [];
+		const leaveDatesByEmployee = new Map<string, string[]>();
 		for (const leave of leaves) {
 			const start =
 				leave.startDate < rangeStart ? rangeStart : leave.startDate;
 			const end = leave.endDate > today ? today : leave.endDate;
-			leaveDates.push(...enumerateDays(start, end));
+			const list = leaveDatesByEmployee.get(leave.employeeId) ?? [];
+			list.push(...enumerateDays(start, end));
+			leaveDatesByEmployee.set(leave.employeeId, list);
 		}
 		const holidayDates = await getHolidayDates(
 			context.orgId,
 			rangeStart,
 			today,
 		);
-		const isWorkDate = (date: string) => {
+		const isEmployeeWorkDate = (employeeId: string, date: string) => {
 			const t = Date.UTC(
 				Number(date.slice(0, 4)),
 				Number(date.slice(5, 7)) - 1,
 				Number(date.slice(8, 10)),
 			);
 			return (
-				workDays.includes(new Date(t).getUTCDay()) && !holidayDates.has(date)
+				(workDaysByEmployee.get(employeeId) ?? workDays).includes(
+					new Date(t).getUTCDay(),
+				) && !holidayDates.has(date)
 			);
 		};
 
@@ -210,14 +240,22 @@ export const getOrgAttendanceTrend = createServerFn({ method: "GET" }).handler(
 			let expected = 0;
 			for (let t = weekStartUtc; t <= weekEndUtc; t += DAY_MS) {
 				const date = new Date(t).toISOString().slice(0, 10);
-				if (isWorkDate(date)) {
-					expected += targetIds.length;
+				for (const id of targetIds) {
+					if (isEmployeeWorkDate(id, date)) {
+						expected += 1;
+					}
 				}
 			}
 			let leaveDays = 0;
-			for (const date of leaveDates) {
-				if (date >= weekStart && date <= weekEnd && isWorkDate(date)) {
-					leaveDays += 1;
+			for (const [employeeId, dates] of leaveDatesByEmployee) {
+				for (const date of dates) {
+					if (
+						date >= weekStart &&
+						date <= weekEnd &&
+						isEmployeeWorkDate(employeeId, date)
+					) {
+						leaveDays += 1;
+					}
 				}
 			}
 			const denominator = Math.max(expected - leaveDays, 0);

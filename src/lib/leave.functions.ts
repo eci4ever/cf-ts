@@ -244,13 +244,22 @@ async function validateAndQuote(options: {
 	if (startDate > endDate) {
 		return { ok: false, reason: "Start date must be before end date" };
 	}
+	const orgId = (await getMemberContext())!.orgId;
 	const [org] = await getDb()
 		.select({ workDays: organization.workDays })
 		.from(organization)
-		.where(eq(organization.id, (await getMemberContext())!.orgId))
+		.where(eq(organization.id, orgId))
 		.limit(1);
-	const workDays = org.workDays.split(",").map(Number);
-	const holidayDates = await getHolidayDates((await getMemberContext())!.orgId);
+	// day counting follows the applicant's own work days when overridden
+	const [applicant] = await getDb()
+		.select({ workDays: employee.workDays })
+		.from(employee)
+		.where(and(eq(employee.id, employeeId), eq(employee.organizationId, orgId)))
+		.limit(1);
+	const workDays = (applicant?.workDays ?? org.workDays)
+		.split(",")
+		.map(Number);
+	const holidayDates = await getHolidayDates(orgId);
 	const days = countWorkingDays(startDate, endDate, workDays, holidayDates);
 	if (days <= 0) {
 		return { ok: false, reason: "The selected range contains no working days" };
@@ -348,7 +357,11 @@ export const getLeaveOverview = createServerFn({ method: "GET" }).handler(
 			.where(eq(leaveType.organizationId, context.orgId))
 			.orderBy(leaveType.name);
 		const year = todayKey(context.org.timezone).slice(0, 4);
-		const workDays = context.org.workDays.split(",").map(Number);
+		const workDays = (
+			context.employee?.workDays ?? context.org.workDays
+		)
+			.split(",")
+			.map(Number);
 		const holidayDates = await getHolidayDates(context.orgId);
 		const balances = [];
 		for (const type of types) {

@@ -3,6 +3,8 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { getDb } from "#/db";
 import { employee, member, organization, user, workSite } from "#/db/schema";
+import { logAudit } from "./audit.functions";
+import { parseTimeToMinutes } from "./schedule";
 import { getCurrentSession } from "./session";
 import { PLANS, type PlanId } from "./subscription";
 
@@ -81,6 +83,10 @@ export const listEmployees = createServerFn({ method: "GET" }).handler(
 				supervisorName: supervisor.name,
 				siteId: employee.siteId,
 				siteName: workSite.name,
+				workDays: employee.workDays,
+				workStartMinutes: employee.workStartMinutes,
+				workEndMinutes: employee.workEndMinutes,
+				graceMinutes: employee.graceMinutes,
 				linkedEmail: user.email,
 				linkedName: user.name,
 			})
@@ -308,6 +314,89 @@ export const updateEmployee = createServerFn({ method: "POST" })
 				...(data.siteId !== undefined ? { siteId: data.siteId } : {}),
 			})
 			.where(eq(employee.id, data.employeeId));
+		return { ok: true as const };
+	});
+
+export const setEmployeeSchedule = createServerFn({ method: "POST" })
+	.validator(
+		(input: {
+			employeeId: string;
+			// null = follow the org default for that field
+			workDays: number[] | null;
+			startTime: string | null;
+			endTime: string | null;
+			graceMinutes: number | null;
+		}) => input,
+	)
+	.handler(async ({ data }) => {
+		const { orgId, session } = await requireOrgAdmin();
+		const record = await requireEmployee(orgId, data.employeeId);
+		if (!record) {
+			return { ok: false as const, reason: "Employee not found" };
+		}
+		let workDays: string | null = null;
+		let workStartMinutes: number | null = null;
+		let workEndMinutes: number | null = null;
+		let graceMinutes: number | null = null;
+		if (data.workDays !== null) {
+			const days = [...new Set(data.workDays)].filter(
+				(day) => Number.isInteger(day) && day >= 0 && day <= 6,
+			);
+			if (days.length === 0) {
+				return { ok: false as const, reason: "Select at least one work day" };
+			}
+			workDays = days.sort((a, b) => a - b).join(",");
+		}
+		if (data.startTime !== null || data.endTime !== null) {
+			// times are validated as a pair — a custom start without an end is ambiguous
+			if (data.startTime === null || data.endTime === null) {
+				return {
+					ok: false as const,
+					reason: "Set both start and end times",
+				};
+			}
+			const start = parseTimeToMinutes(data.startTime);
+			const end = parseTimeToMinutes(data.endTime);
+			if (start === null || end === null) {
+				return { ok: false as const, reason: "Invalid times (use HH:MM)" };
+			}
+			if (end <= start) {
+				return {
+					ok: false as const,
+					reason: "End time must be after start time",
+				};
+			}
+			workStartMinutes = start;
+			workEndMinutes = end;
+		}
+		if (data.graceMinutes !== null) {
+			const grace = Math.round(Number(data.graceMinutes));
+			if (!Number.isInteger(grace) || grace < 0 || grace > 240) {
+				return {
+					ok: false as const,
+					reason: "Grace must be between 0 and 240 minutes",
+				};
+			}
+			graceMinutes = grace;
+		}
+		await getDb()
+			.update(employee)
+			.set({ workDays, workStartMinutes, workEndMinutes, graceMinutes })
+			.where(eq(employee.id, data.employeeId));
+		const overrides = [
+			workDays !== null ? `days ${workDays}` : null,
+			workStartMinutes !== null
+				? `${data.startTime}-${data.endTime}`
+				: null,
+			graceMinutes !== null ? `grace ${graceMinutes}m` : null,
+		].filter(Boolean);
+		await logAudit({
+			organizationId: orgId,
+			userId: session.user.id,
+			targetUserId: undefined,
+			action: "employees.schedule_set",
+			detail: overrides.length > 0 ? overrides.join(" · ") : "Reset to org default",
+		});
 		return { ok: true as const };
 	});
 

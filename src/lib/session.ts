@@ -19,6 +19,10 @@ export type OrgMemberContext = {
 		name: string;
 		supervisorId: string | null;
 		isActive: boolean;
+		workDays: string | null;
+		workStartMinutes: number | null;
+		workEndMinutes: number | null;
+		graceMinutes: number | null;
 	} | null;
 };
 
@@ -52,6 +56,10 @@ export async function getOrgMemberContext(): Promise<OrgMemberContext | null> {
 			name: employee.name,
 			supervisorId: employee.supervisorId,
 			isActive: employee.isActive,
+			workDays: employee.workDays,
+			workStartMinutes: employee.workStartMinutes,
+			workEndMinutes: employee.workEndMinutes,
+			graceMinutes: employee.graceMinutes,
 		})
 		.from(employee)
 		.where(

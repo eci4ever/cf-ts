@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "15011c75-bb9e-49bf-a2d3-d0be79e13025",
-  "prevId": "6801369c-a34e-40fd-a499-5271b205f7af",
+  "id": "ad7e64ee-8c4a-4ef9-854e-fe2b64130626",
+  "prevId": "15011c75-bb9e-49bf-a2d3-d0be79e13025",
   "tables": {
     "account": {
       "name": "account",
@@ -790,6 +790,34 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'normal'"
+        },
+        "work_days": {
+          "name": "work_days",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "work_start_minutes": {
+          "name": "work_start_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "work_end_minutes": {
+          "name": "work_end_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "grace_minutes": {
+          "name": "grace_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "joined_at": {
           "name": "joined_at",

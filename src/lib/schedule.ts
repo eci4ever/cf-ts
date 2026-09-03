@@ -100,6 +100,37 @@ export function isWorkDay(date: Date, schedule: Schedule): boolean {
 	);
 }
 
+// per-employee schedule overrides — each field falls back to the org default
+export type ScheduleOverride = {
+	workDays: string | null;
+	workStartMinutes: number | null;
+	workEndMinutes: number | null;
+	graceMinutes: number | null;
+};
+
+export const NO_SCHEDULE_OVERRIDE: ScheduleOverride = {
+	workDays: null,
+	workStartMinutes: null,
+	workEndMinutes: null,
+	graceMinutes: null,
+};
+
+export function resolveSchedule(
+	override: ScheduleOverride | null,
+	org: { workDays: string; workStartMinutes: number; workEndMinutes: number; graceMinutes: number },
+): { workDays: number[]; workStartMinutes: number; workEndMinutes: number; graceMinutes: number } {
+	const effective = override ?? NO_SCHEDULE_OVERRIDE;
+	return {
+		workDays: (effective.workDays ?? org.workDays)
+			.split(",")
+			.map(Number)
+			.filter((day) => day >= 0 && day <= 6),
+		workStartMinutes: effective.workStartMinutes ?? org.workStartMinutes,
+		workEndMinutes: effective.workEndMinutes ?? org.workEndMinutes,
+		graceMinutes: effective.graceMinutes ?? org.graceMinutes,
+	};
+}
+
 export function computeClockInStatus(
 	clockIn: Date,
 	schedule: Schedule,
