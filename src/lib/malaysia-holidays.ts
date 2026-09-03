@@ -788,3 +788,20 @@ export const MALAYSIA_HOLIDAYS: Record<string, Record<number, HolidayEntry[]>> =
 		],
 	},
 };
+
+// States whose public-sector weekend is Friday–Saturday; the rest follow
+// Saturday–Sunday (Perlis moved to Sat–Sun in 2019).
+export const FRI_SAT_WEEKEND_STATES = [
+	"Kelantan",
+	"Terengganu",
+	"Kedah",
+] as const;
+
+// Working days (0=Sun … 6=Sat) implied by a state's weekend pattern.
+export function expectedWorkDays(state: string): number[] {
+	return FRI_SAT_WEEKEND_STATES.includes(
+		state as (typeof FRI_SAT_WEEKEND_STATES)[number],
+	)
+		? [0, 1, 2, 3, 4] // Sun–Thu
+		: [1, 2, 3, 4, 5]; // Mon–Fri
+}

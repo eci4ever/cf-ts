@@ -64,10 +64,13 @@ import {
 } from "#/lib/leave.functions";
 import { getMyOrgRole } from "#/lib/org.functions";
 import {
+	expectedWorkDays,
+	FRI_SAT_WEEKEND_STATES,
 	MALAYSIA_HOLIDAYS,
 	MALAYSIA_HOLIDAY_YEARS,
 	MALAYSIA_STATES,
 } from "#/lib/malaysia-holidays";
+import { formatMinutes } from "#/lib/schedule";
 import {
 	addHoliday,
 	deleteCurrentOrg,
@@ -146,6 +149,7 @@ function SettingsPage() {
 			/>
 			<HolidaysCard
 				holidays={settings.holidays}
+				schedule={settings.schedule}
 				onChanged={() => queryClient.invalidateQueries({ queryKey: ["org"] })}
 			/>
 			<EmailNotificationsCard
@@ -253,6 +257,12 @@ function ScheduleCard({
 		);
 	}
 
+	// keep the toggles in sync when work days change elsewhere (e.g. the
+	// weekend pattern applied from the Import state holidays dialog)
+	useEffect(() => {
+		setDays(schedule.workDays);
+	}, [schedule.workDays]);
+
 	function handleProceed() {
 		scheduleMutation.mutate({
 			workDays: days,
@@ -304,6 +314,10 @@ function ScheduleCard({
 								</Button>
 							))}
 						</div>
+						<p className="text-xs text-muted-foreground">
+							Kelantan, Terengganu &amp; Kedah follow a Friday–Saturday weekend —
+							match your work days via "Import state holidays".
+						</p>
 					</div>
 					<div className="grid gap-4 sm:grid-cols-3">
 						<div className="flex flex-col gap-2">
@@ -379,9 +393,11 @@ type HolidayRow = {
 
 function HolidaysCard({
 	holidays,
+	schedule,
 	onChanged,
 }: {
 	holidays: HolidayRow[];
+	schedule: ScheduleData;
 	onChanged: () => void;
 }) {
 	const [name, setName] = useState("");
@@ -472,10 +488,11 @@ function HolidaysCard({
 					>
 						{addMutation.isPending ? "Adding..." : "Add holiday"}
 					</Button>
-					<ImportHolidaysDialog
-						existingDates={new Set(holidays.map((holiday) => holiday.date))}
-						onImported={onChanged}
-					/>
+				<ImportHolidaysDialog
+					existingDates={new Set(holidays.map((holiday) => holiday.date))}
+					schedule={schedule}
+					onImported={onChanged}
+				/>
 				</form>
 				{holidays.length === 0 ? (
 					<p className="text-sm text-muted-foreground">
@@ -513,9 +530,11 @@ function HolidaysCard({
 
 function ImportHolidaysDialog({
 	existingDates,
+	schedule,
 	onImported,
 }: {
 	existingDates: Set<string>;
+	schedule: ScheduleData;
 	onImported: () => void;
 }) {
 	const [open, setOpen] = useState(false);
@@ -533,6 +552,38 @@ function ImportHolidaysDialog({
 		() => preset.filter((entry) => existingDates.has(entry.date)),
 		[preset, existingDates],
 	);
+	const friSatWeekend = FRI_SAT_WEEKEND_STATES.includes(
+		state as (typeof FRI_SAT_WEEKEND_STATES)[number],
+	);
+	const daysMismatch = useMemo(() => {
+		const current = [...schedule.workDays].sort((a, b) => a - b).join(",");
+		const expected = [...expectedWorkDays(state)].sort((a, b) => a - b).join(",");
+		return current !== expected;
+	}, [schedule.workDays, state]);
+
+	const weekendMutation = useMutation({
+		mutationFn: async () => {
+			const result = await updateSchedule({
+				data: {
+					workDays: expectedWorkDays(state),
+					startTime: formatMinutes(schedule.workStartMinutes),
+					endTime: formatMinutes(schedule.workEndMinutes),
+					graceMinutes: schedule.graceMinutes,
+				},
+			});
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: () => {
+			toast.success(`Work days set to ${state}'s weekend pattern`);
+			onImported();
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
 
 	useEffect(() => {
 		if (!open) return;
@@ -636,6 +687,25 @@ function ImportHolidaysDialog({
 						</Select>
 					</div>
 				</div>
+				{daysMismatch ? (
+					<div className="flex items-center justify-between gap-2 rounded-md border border-dashed bg-muted/40 px-3 py-2">
+						<p className="text-xs text-muted-foreground">
+							{state} follows a{" "}
+							{friSatWeekend ? "Friday–Saturday" : "Saturday–Sunday"} weekend.
+						</p>
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							disabled={weekendMutation.isPending}
+							onClick={() => weekendMutation.mutate()}
+						>
+							{weekendMutation.isPending
+								? "Updating..."
+								: "Set work days to match"}
+						</Button>
+					</div>
+				) : null}
 				<div className="-mx-1 flex-1 overflow-y-auto px-1">
 					<ul className="flex flex-col gap-0.5">
 						{preset.map((entry) => {
