@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
-import { AlertTriangle, CalendarOff, Crown, Settings as SettingsIcon, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+	AlertTriangle,
+	CalendarOff,
+	Crown,
+	Download,
+	Settings as SettingsIcon,
+	Trash2,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
 	AlertDialog,
@@ -22,6 +29,15 @@ import {
 	CardHeader,
 	CardTitle,
 } from "#/components/ui/card";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+	DialogTrigger,
+} from "#/components/ui/dialog";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { Switch } from "#/components/ui/switch";
@@ -48,10 +64,16 @@ import {
 } from "#/lib/leave.functions";
 import { getMyOrgRole } from "#/lib/org.functions";
 import {
+	MALAYSIA_HOLIDAYS,
+	MALAYSIA_HOLIDAY_YEARS,
+	MALAYSIA_STATES,
+} from "#/lib/malaysia-holidays";
+import {
 	addHoliday,
 	deleteCurrentOrg,
 	deleteHoliday,
 	getOrgSettings,
+	importStateHolidays,
 	setEmailNotifications,
 	transferOwnership,
 	updateOrgName,
@@ -450,6 +472,10 @@ function HolidaysCard({
 					>
 						{addMutation.isPending ? "Adding..." : "Add holiday"}
 					</Button>
+					<ImportHolidaysDialog
+						existingDates={new Set(holidays.map((holiday) => holiday.date))}
+						onImported={onChanged}
+					/>
 				</form>
 				{holidays.length === 0 ? (
 					<p className="text-sm text-muted-foreground">
@@ -482,6 +508,189 @@ function HolidaysCard({
 				)}
 			</CardContent>
 		</Card>
+	);
+}
+
+function ImportHolidaysDialog({
+	existingDates,
+	onImported,
+}: {
+	existingDates: Set<string>;
+	onImported: () => void;
+}) {
+	const [open, setOpen] = useState(false);
+	const currentYear = new Date().getFullYear();
+	const defaultYear =
+		(MALAYSIA_HOLIDAY_YEARS as readonly number[]).includes(currentYear)
+			? currentYear
+			: MALAYSIA_HOLIDAY_YEARS[0];
+	const [state, setState] = useState<string>(MALAYSIA_STATES[0]);
+	const [year, setYear] = useState<number>(defaultYear);
+	const [selected, setSelected] = useState<Set<string>>(new Set());
+
+	const preset = MALAYSIA_HOLIDAYS[state]?.[year] ?? [];
+	const existingInPreset = useMemo(
+		() => preset.filter((entry) => existingDates.has(entry.date)),
+		[preset, existingDates],
+	);
+
+	useEffect(() => {
+		if (!open) return;
+		setSelected(
+			new Set(
+				preset
+					.filter((entry) => !existingDates.has(entry.date))
+					.map((entry) => entry.date),
+			),
+		);
+		// recompute the default selection whenever the dialog reopens or the
+		// state/year pick changes
+	}, [open, state, year, existingDates]);
+
+	const importMutation = useMutation({
+		mutationFn: async () => {
+			const result = await importStateHolidays({
+				data: { state, year, dates: [...selected] },
+			});
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: (result) => {
+			toast.success(
+				`Imported ${result.inserted} holiday${result.inserted === 1 ? "" : "s"}` +
+					(result.skipped > 0 ? ` · ${result.skipped} skipped (duplicate dates)` : ""),
+			);
+			setOpen(false);
+			onImported();
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
+
+	const toggle = (date: string, checked: boolean) => {
+		setSelected((prev) => {
+			const next = new Set(prev);
+			if (checked) {
+				next.add(date);
+			} else {
+				next.delete(date);
+			}
+			return next;
+		});
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={setOpen}>
+			<DialogTrigger asChild>
+				<Button type="button" variant="outline">
+					<Download />
+					Import state holidays
+				</Button>
+			</DialogTrigger>
+			<DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-md">
+				<DialogHeader>
+					<DialogTitle>Import state holidays</DialogTitle>
+					<DialogDescription>
+						Pick a Malaysian state and year — gazetted public holidays for that
+						state are listed below for one-click import.
+					</DialogDescription>
+				</DialogHeader>
+				<div className="flex gap-2">
+					<div className="flex flex-1 flex-col gap-1.5">
+						<Label htmlFor="import-state">State</Label>
+						<Select
+							value={state}
+							onValueChange={(value) => setState(value)}
+						>
+							<SelectTrigger id="import-state">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								{MALAYSIA_STATES.map((option) => (
+									<SelectItem key={option} value={option}>
+										{option}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</div>
+					<div className="flex flex-col gap-1.5">
+						<Label htmlFor="import-year">Year</Label>
+						<Select
+							value={String(year)}
+							onValueChange={(value) => setYear(Number(value))}
+						>
+							<SelectTrigger id="import-year" className="w-24">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								{(MALAYSIA_HOLIDAY_YEARS as readonly number[]).map((option) => (
+									<SelectItem key={option} value={String(option)}>
+										{option}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</div>
+				</div>
+				<div className="-mx-1 flex-1 overflow-y-auto px-1">
+					<ul className="flex flex-col gap-0.5">
+						{preset.map((entry) => {
+							const alreadyAdded = existingDates.has(entry.date);
+							return (
+								<li key={entry.date}>
+									<label
+										className={`flex items-center gap-2.5 rounded px-2 py-1.5 text-sm ${
+											alreadyAdded
+												? "text-muted-foreground"
+												: "cursor-pointer hover:bg-accent"
+										}`}
+									>
+										<input
+											type="checkbox"
+											className="size-4 accent-teal-600"
+											checked={selected.has(entry.date)}
+											disabled={alreadyAdded || importMutation.isPending}
+											onChange={(event) =>
+												toggle(entry.date, event.target.checked)
+											}
+										/>
+										<span className="w-20 shrink-0 tabular-nums text-muted-foreground">
+											{entry.date.slice(5)}
+										</span>
+										<span className="flex-1">{entry.name}</span>
+										{alreadyAdded ? (
+											<span className="text-xs text-muted-foreground">
+												added
+											</span>
+										) : null}
+									</label>
+								</li>
+							);
+						})}
+					</ul>
+				</div>
+				<DialogFooter className="items-center gap-2 sm:justify-between">
+					<span className="text-sm text-muted-foreground">
+						{existingInPreset.length > 0
+							? `${existingInPreset.length} already in your calendar`
+							: `${preset.length} holidays available`}
+					</span>
+					<Button
+						type="button"
+						disabled={selected.size === 0 || importMutation.isPending}
+						onClick={() => importMutation.mutate()}
+					>
+						{importMutation.isPending
+							? "Importing..."
+							: `Import ${selected.size} selected`}
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
 	);
 }
 

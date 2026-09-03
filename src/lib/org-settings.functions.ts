@@ -10,6 +10,11 @@ import {
 	user,
 } from "#/db/schema";
 import { logAudit } from "./audit.functions";
+import {
+	MALAYSIA_HOLIDAYS,
+	MALAYSIA_HOLIDAY_YEARS,
+	MALAYSIA_STATES,
+} from "./malaysia-holidays";
 import { parseTimeToMinutes } from "./schedule";
 import { getCurrentSession } from "./session";
 
@@ -384,6 +389,63 @@ export const addHoliday = createServerFn({ method: "POST" })
 			detail: `${name} (${date})`,
 		});
 		return { ok: true as const };
+	});
+
+export const importStateHolidays = createServerFn({ method: "POST" })
+	.validator((input: { state: string; year: number; dates: string[] }) => input)
+	.handler(async ({ data }) => {
+		const { session, orgId } = await requireOrgRole(["owner", "admin"]);
+		// never trust the client payload — dates must exist in the shipped dataset
+		if (
+			!MALAYSIA_STATES.includes(
+				data.state as (typeof MALAYSIA_STATES)[number],
+			) ||
+			!(MALAYSIA_HOLIDAY_YEARS as readonly number[]).includes(data.year)
+		) {
+			return { ok: false as const, reason: "Invalid state or year" };
+		}
+		const preset = MALAYSIA_HOLIDAYS[data.state]?.[data.year] ?? [];
+		const nameByDate = new Map(preset.map((entry) => [entry.date, entry.name]));
+		const dates = [...new Set(data.dates)]
+			.filter((date) => nameByDate.has(date))
+			.slice(0, 40);
+		if (dates.length === 0) {
+			return { ok: false as const, reason: "No valid holidays selected" };
+		}
+		// D1 caps bound parameters at 100 per statement (5 per holiday row),
+		// so insert in chunks
+		const inserted: { date: string }[] = [];
+		for (let i = 0; i < dates.length; i += 18) {
+			const chunk = dates.slice(i, i + 18);
+			const rows = await getDb()
+				.insert(orgHoliday)
+				.values(
+					chunk.map((date) => ({
+						id: crypto.randomUUID(),
+						organizationId: orgId,
+						name: nameByDate.get(date)!,
+						date,
+						createdAt: new Date(),
+					})),
+				)
+				// plain DO NOTHING — SQLite rejects qualified column names in a
+				// conflict target, and the only unique index on this table is
+				// (organization_id, date) anyway
+				.onConflictDoNothing()
+				.returning({ date: orgHoliday.date });
+			inserted.push(...rows);
+		}
+		await logAudit({
+			organizationId: orgId,
+			userId: session.user.id,
+			action: "settings.holidays_imported",
+			detail: `${data.state} ${data.year}: ${inserted.length} holidays`,
+		});
+		return {
+			ok: true as const,
+			inserted: inserted.length,
+			skipped: dates.length - inserted.length,
+		};
 	});
 
 export const deleteHoliday = createServerFn({ method: "POST" })
