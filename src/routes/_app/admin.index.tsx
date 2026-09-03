@@ -131,7 +131,13 @@ function AdminOverviewPage() {
 										className="flex items-center justify-between gap-2 text-sm"
 									>
 										<span className="min-w-0 truncate">
-											<span className="font-medium">{org.name}</span>
+											<Link
+												to="/admin/organizations/$orgId"
+												params={{ orgId: org.id }}
+												className="font-medium hover:underline"
+											>
+												{org.name}
+											</Link>
 											<span className="ml-2 text-xs text-muted-foreground">
 												{org.memberCount} member
 												{org.memberCount === 1 ? "" : "s"}

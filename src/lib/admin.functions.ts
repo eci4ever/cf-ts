@@ -1,7 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq, gt, lt, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt, ne, sql } from "drizzle-orm";
 import { getDb } from "#/db";
-import { creditLedger, organization, user } from "#/db/schema";
+import { creditLedger, employee, member, organization, user } from "#/db/schema";
+import { statusFor } from "./billing.functions";
+import { type SubscriptionStatus } from "./subscription";
 import { getCurrentSession } from "./session";
 
 async function requirePlatformAdmin() {
@@ -11,6 +13,77 @@ async function requirePlatformAdmin() {
 	}
 	return session;
 }
+
+export type OrgAdminDetail = {
+	org: typeof organization.$inferSelect;
+	status: SubscriptionStatus;
+	members: {
+		userId: string;
+		name: string;
+		email: string;
+		role: string;
+		joinedAt: Date;
+	}[];
+	employees: {
+		id: string;
+		employeeNo: string;
+		name: string;
+		position: string | null;
+		isActive: boolean;
+		supervisorName: string | null;
+	}[];
+};
+
+export const getOrgAdminDetail = createServerFn({ method: "GET" })
+	.validator((input: { orgId: string }) => input)
+	.handler(async ({ data }): Promise<OrgAdminDetail | null> => {
+		await requirePlatformAdmin();
+		const db = getDb();
+		const [org] = await db
+			.select()
+			.from(organization)
+			.where(eq(organization.id, data.orgId))
+			.limit(1);
+		if (!org) {
+			return null;
+		}
+		const members = await db
+			.select({
+				userId: member.userId,
+				name: user.name,
+				email: user.email,
+				role: member.role,
+				joinedAt: member.createdAt,
+			})
+			.from(member)
+			.innerJoin(user, eq(member.userId, user.id))
+			.where(eq(member.organizationId, org.id))
+			.orderBy(asc(member.createdAt));
+		const employees = await db
+			.select({
+				id: employee.id,
+				employeeNo: employee.employeeNo,
+				name: employee.name,
+				position: employee.position,
+				isActive: employee.isActive,
+				supervisorId: employee.supervisorId,
+			})
+			.from(employee)
+			.where(eq(employee.organizationId, org.id))
+			.orderBy(asc(employee.name));
+		const nameById = new Map(employees.map((row) => [row.id, row.name]));
+		return {
+			org,
+			status: statusFor(org, new Date()),
+			members,
+			employees: employees.map(({ supervisorId, ...row }) => ({
+				...row,
+				supervisorName: supervisorId
+					? (nameById.get(supervisorId) ?? null)
+					: null,
+			})),
+		};
+	});
 
 export const getPlatformStats = createServerFn({ method: "GET" }).handler(
 	async () => {

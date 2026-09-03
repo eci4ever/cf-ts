@@ -76,7 +76,7 @@ async function persistOrgState(org: OrganizationRow): Promise<void> {
 		.where(eq(organization.id, org.id));
 }
 
-function statusFor(org: OrganizationRow, now: Date): SubscriptionStatus {
+export function statusFor(org: OrganizationRow, now: Date): SubscriptionStatus {
 	if (org.plan === "free" || !org.paidUntil) {
 		return "active";
 	}

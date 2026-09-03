@@ -32,6 +32,7 @@ import { Route as AppAdminAuditRouteImport } from './routes/_app/admin/audit'
 import { Route as AppAdminOrganizationsRouteImport } from './routes/_app/admin.organizations'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin.users'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as AppAdminOrganizationsOrgIdRouteImport } from './routes/_app/admin.organizations_.$orgId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -147,6 +148,12 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppAdminOrganizationsOrgIdRoute =
+  AppAdminOrganizationsOrgIdRouteImport.update({
+    id: '/organizations_/$orgId',
+    path: '/organizations/$orgId',
+    getParentRoute: () => AppAdminRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -171,6 +178,7 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AppAdminUsersRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/admin/': typeof AppAdminIndexRoute
+  '/admin/organizations/$orgId': typeof AppAdminOrganizationsOrgIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -194,6 +202,7 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AppAdminUsersRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/admin': typeof AppAdminIndexRoute
+  '/admin/organizations/$orgId': typeof AppAdminOrganizationsOrgIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -220,6 +229,7 @@ export interface FileRoutesById {
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/_app/admin/': typeof AppAdminIndexRoute
+  '/_app/admin/organizations_/$orgId': typeof AppAdminOrganizationsOrgIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -246,6 +256,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/api/auth/$'
     | '/admin/'
+    | '/admin/organizations/$orgId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -269,6 +280,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/api/auth/$'
     | '/admin'
+    | '/admin/organizations/$orgId'
   id:
     | '__root__'
     | '/'
@@ -294,6 +306,7 @@ export interface FileRouteTypes {
     | '/_app/admin/users'
     | '/api/auth/$'
     | '/_app/admin/'
+    | '/_app/admin/organizations_/$orgId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -470,6 +483,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/admin/organizations_/$orgId': {
+      id: '/_app/admin/organizations_/$orgId'
+      path: '/organizations/$orgId'
+      fullPath: '/admin/organizations/$orgId'
+      preLoaderRoute: typeof AppAdminOrganizationsOrgIdRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
   }
 }
 
@@ -478,6 +498,7 @@ interface AppAdminRouteChildren {
   AppAdminOrganizationsRoute: typeof AppAdminOrganizationsRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
   AppAdminIndexRoute: typeof AppAdminIndexRoute
+  AppAdminOrganizationsOrgIdRoute: typeof AppAdminOrganizationsOrgIdRoute
 }
 
 const AppAdminRouteChildren: AppAdminRouteChildren = {
@@ -485,6 +506,7 @@ const AppAdminRouteChildren: AppAdminRouteChildren = {
   AppAdminOrganizationsRoute: AppAdminOrganizationsRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
   AppAdminIndexRoute: AppAdminIndexRoute,
+  AppAdminOrganizationsOrgIdRoute: AppAdminOrganizationsOrgIdRoute,
 }
 
 const AppAdminRouteWithChildren = AppAdminRoute._addFileChildren(
