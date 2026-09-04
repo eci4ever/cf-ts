@@ -6,7 +6,7 @@ import {
 	getSortedRowModel,
 	useReactTable,
 } from "@tanstack/react-table";
-import { CalendarClock, MoreHorizontal, Plus, UserRoundCog } from "lucide-react";
+import { CalendarClock, FileUp, MoreHorizontal, Plus, UserRoundCog } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DataTable, SortableHeader } from "#/components/data-table/data-table";
@@ -45,6 +45,7 @@ import {
 } from "#/components/ui/select";
 import {
 	createEmployee,
+	importEmployees,
 	linkEmployee,
 	listEmployees,
 	listLinkableMembers,
@@ -53,6 +54,7 @@ import {
 	suggestEmployeeNo,
 	updateEmployee,
 } from "#/lib/employees.functions";
+import { dataRows, parseCsv } from "#/lib/csv";
 import { getGeofenceSettings } from "#/lib/geofence.functions";
 import { getMyOrgRole } from "#/lib/org.functions";
 import { getOrgSettings } from "#/lib/org-settings.functions";
@@ -123,6 +125,7 @@ function EmployeesPage() {
 	const [editing, setEditing] = useState<EmployeeRow | null>(null);
 	const [initialMemberId, setInitialMemberId] = useState<string | null>(null);
 	const [scheduleTarget, setScheduleTarget] = useState<EmployeeRow | null>(null);
+	const [importOpen, setImportOpen] = useState(false);
 	const employeesQuery = useQuery({
 		queryKey: ["employees", "list"],
 		queryFn: listEmployees,
@@ -339,14 +342,32 @@ function EmployeesPage() {
 						loading={employeesQuery.isPending}
 						columnCount={columns.length}
 						toolbar={
-							<Button size="sm" onClick={() => openAdd()}>
-								<Plus />
-								Add employee
-							</Button>
+							<div className="flex gap-2">
+								<Button
+									size="sm"
+									variant="outline"
+									onClick={() => setImportOpen(true)}
+								>
+									<FileUp />
+									Import CSV
+								</Button>
+								<Button size="sm" onClick={() => openAdd()}>
+									<Plus />
+									Add employee
+								</Button>
+							</div>
 						}
 					/>
 				</CardContent>
 			</Card>
+			<ImportCsvDialog
+				open={importOpen}
+				onClose={() => setImportOpen(false)}
+				onImported={(imported) => {
+					toast.success(`${imported} employee${imported === 1 ? "" : "s"} imported`);
+					queryClient.invalidateQueries({ queryKey: ["employees"] });
+				}}
+			/>
 			<EmployeeFormDialog
 				open={formOpen}
 				editing={editing}
@@ -376,6 +397,201 @@ function EmployeesPage() {
 				}}
 			/>
 		</div>
+	);
+}
+
+const CSV_TEMPLATE = `Name,EmployeeNo,Position,Shift,JoinedAt,SupervisorNo,SiteName
+Ali Bin Abu,EMP-101,Barista,normal,2026-01-15,EMP-001,HQ Bangsar
+Sara Lee,,Supervisor,flexi,,,Outlet Mont Kiara`;
+
+function ImportCsvDialog({
+	open,
+	onClose,
+	onImported,
+}: {
+	open: boolean;
+	onClose: () => void;
+	onImported: (imported: number) => void;
+}) {
+	const [csvText, setCsvText] = useState("");
+	const [fileName, setFileName] = useState("");
+	const [result, setResult] = useState<{
+		imported: number;
+		failed: { row: number; reason: string }[];
+	} | null>(null);
+
+	const preview = useMemo(() => {
+		if (!csvText.trim()) return null;
+		const rows = dataRows(parseCsv(csvText)).filter((cells) =>
+			cells.some((cell) => cell.trim() !== ""),
+		);
+		return { total: rows.length, sample: rows.slice(0, 5) };
+	}, [csvText]);
+
+	const mutation = useMutation({
+		mutationFn: async () => {
+			const result = await importEmployees({ data: { csv: csvText } });
+			if (!result.ok) {
+				throw new Error(result.reason);
+			}
+			return result;
+		},
+		onSuccess: (result) => {
+			setResult({ imported: result.imported, failed: result.failed });
+			if (result.imported > 0) {
+				onImported(result.imported);
+			}
+			setCsvText("");
+			setFileName("");
+		},
+		onError: (error) => {
+			toast.error(error.message);
+		},
+	});
+
+	const handleClose = () => {
+		onClose();
+		setCsvText("");
+		setFileName("");
+		setResult(null);
+	};
+
+	const downloadTemplate = () => {
+		const blob = new Blob([CSV_TEMPLATE], { type: "text/csv" });
+		const url = URL.createObjectURL(blob);
+		const anchor = document.createElement("a");
+		anchor.href = url;
+		anchor.download = "employees-import-template.csv";
+		anchor.click();
+		URL.revokeObjectURL(url);
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={(next) => (!next ? handleClose() : null)}>
+			<DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-lg">
+				<DialogHeader>
+					<DialogTitle>Import employees from CSV</DialogTitle>
+					<DialogDescription>
+						Columns: Name (required), EmployeeNo (empty = auto), Position,
+						Shift, JoinedAt (YYYY-MM-DD), SupervisorNo, SiteName. Valid rows
+						are imported; problem rows are listed with reasons.
+					</DialogDescription>
+				</DialogHeader>
+				{result ? (
+					<div className="flex flex-col gap-3 overflow-y-auto">
+						<p className="text-sm">
+							Imported <strong>{result.imported}</strong> employee
+							{result.imported === 1 ? "" : "s"}
+							{result.failed.length > 0
+								? ` · ${result.failed.length} row${result.failed.length === 1 ? "" : "s"} skipped`
+								: ""}
+							.
+						</p>
+						{result.failed.length > 0 ? (
+							<ul className="flex flex-col gap-1">
+								{result.failed.map((failure) => (
+									<li
+										key={failure.row}
+										className="rounded border px-2 py-1 text-sm text-destructive"
+									>
+										Row {failure.row}: {failure.reason}
+									</li>
+								))}
+							</ul>
+						) : null}
+					</div>
+				) : (
+					<div className="flex flex-col gap-3 overflow-y-auto">
+						<div className="flex flex-wrap items-center gap-2">
+							<label className="inline-flex">
+								<input
+									type="file"
+									accept=".csv,text/csv"
+									className="sr-only"
+									onChange={(event) => {
+										const file = event.target.files?.[0];
+										event.target.value = "";
+										setResult(null);
+										if (file) {
+											setFileName(file.name);
+											file.text().then((text) => setCsvText(text));
+										}
+									}}
+								/>
+								<span className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium hover:bg-accent">
+									<FileUp />
+									Choose file
+								</span>
+							</label>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onClick={downloadTemplate}
+							>
+								Download template
+							</Button>
+							{fileName ? (
+								<span className="text-sm text-muted-foreground">
+									{fileName}
+								</span>
+							) : null}
+						</div>
+						<textarea
+							className="min-h-24 rounded-md border bg-transparent p-2 font-mono text-xs"
+							placeholder={`…or paste CSV here\n${CSV_TEMPLATE}`}
+							value={csvText}
+							onChange={(event) => {
+								setCsvText(event.target.value);
+								setResult(null);
+							}}
+						/>
+						{preview ? (
+							<div className="flex flex-col gap-1">
+								<p className="text-sm text-muted-foreground">
+									{preview.total} data row{preview.total === 1 ? "" : "s"} —
+									first {preview.sample.length}:
+								</p>
+								<div className="overflow-x-auto rounded-md border">
+									<table className="w-full text-xs">
+										<tbody>
+											{preview.sample.map((cells, index) => (
+												<tr key={index} className="border-b last:border-b-0">
+													{cells.map((cell, cellIndex) => (
+														<td
+															key={cellIndex}
+															className="max-w-40 truncate px-2 py-1"
+														>
+															{cell}
+														</td>
+													))}
+												</tr>
+											))}
+										</tbody>
+									</table>
+								</div>
+							</div>
+						) : null}
+					</div>
+				)}
+				<DialogFooter>
+					<Button type="button" variant="outline" onClick={handleClose}>
+						{result ? "Done" : "Cancel"}
+					</Button>
+					{!result ? (
+						<Button
+							type="button"
+							disabled={!preview || preview.total === 0 || mutation.isPending}
+							onClick={() => mutation.mutate()}
+						>
+							{mutation.isPending
+								? "Importing..."
+								: `Import ${preview?.total ?? 0} rows`}
+						</Button>
+					) : null}
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
 	);
 }
 

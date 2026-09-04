@@ -4,6 +4,7 @@ import { alias } from "drizzle-orm/sqlite-core";
 import { getDb } from "#/db";
 import { employee, member, organization, user, workSite } from "#/db/schema";
 import { logAudit } from "./audit.functions";
+import { dataRows, hasHeaderRow, parseCsv } from "./csv";
 import { parseTimeToMinutes } from "./schedule";
 import { getCurrentSession } from "./session";
 import { PLANS, type PlanId } from "./subscription";
@@ -315,6 +316,186 @@ export const updateEmployee = createServerFn({ method: "POST" })
 			})
 			.where(eq(employee.id, data.employeeId));
 		return { ok: true as const };
+	});
+
+const IMPORT_MAX_ROWS = 200;
+const INSERT_CHUNK_ROWS = 9; // 10 params per row vs D1's 100-param cap
+
+export const importEmployees = createServerFn({ method: "POST" })
+	.validator((input: { csv: string }) => input)
+	.handler(async ({ data }) => {
+		const { orgId, session } = await requireOrgAdmin();
+		const db = getDb();
+		const rows = parseCsv(data.csv);
+		const allDataRows = dataRows(rows).filter((cells) =>
+			cells.some((cell) => cell.trim() !== ""),
+		);
+		if (allDataRows.length === 0) {
+			return { ok: false as const, reason: "No data rows found in the CSV" };
+		}
+		if (allDataRows.length > IMPORT_MAX_ROWS) {
+			return {
+				ok: false as const,
+				reason: `Maximum ${IMPORT_MAX_ROWS} rows per import (got ${allDataRows.length})`,
+			};
+		}
+
+		const existing = await db
+			.select({
+				id: employee.id,
+				employeeNo: employee.employeeNo,
+				isActive: employee.isActive,
+			})
+			.from(employee)
+			.where(eq(employee.organizationId, orgId));
+		const existingNoToId = new Map(
+			existing.map((row) => [row.employeeNo, row.id]),
+		);
+		const takenNos = new Set(existing.map((row) => row.employeeNo));
+		const cap = await getSeatCap(orgId);
+		let seatsUsed = existing.filter((row) => row.isActive).length;
+		const sites = await db
+			.select({ id: workSite.id, name: workSite.name })
+			.from(workSite)
+			.where(eq(workSite.organizationId, orgId));
+		const siteIdByName = new Map(
+			sites.map((site) => [site.name.trim().toLowerCase(), site.id]),
+		);
+
+		// auto-numbering continues after the highest existing EMP-n
+		let maxNo = 0;
+		let noWidth = 3;
+		for (const no of takenNos) {
+			const match = /^EMP-(\d+)$/.exec(no);
+			if (match) {
+				maxNo = Math.max(maxNo, Number(match[1]));
+				noWidth = Math.max(noWidth, match[1].length);
+			}
+		}
+
+		const headerOffset = hasHeaderRow(rows) ? 1 : 0;
+		const failures: { row: number; reason: string }[] = [];
+		const valid: {
+			name: string;
+			employeeNo: string;
+			position: string | null;
+			shift: string;
+			joinedAt: Date | null;
+			siteId: string | null;
+			supervisorId: string | null;
+		}[] = [];
+
+		for (const [index, cells] of allDataRows.entries()) {
+			const rowNo = index + headerOffset + 1;
+			const [name, employeeNo, position, shift, joinedAt, supervisorNo, siteName] =
+				cells.map((cell) => (cell ?? "").trim());
+			if (!name) {
+				failures.push({ row: rowNo, reason: "Name is required" });
+				continue;
+			}
+			let no = employeeNo;
+			if (!no) {
+				maxNo += 1;
+				no = `EMP-${String(maxNo).padStart(noWidth, "0")}`;
+			} else {
+				const explicit = /^EMP-(\d+)$/.exec(no);
+				if (explicit) {
+					// keep auto-numbering past explicitly provided numbers too
+					maxNo = Math.max(maxNo, Number(explicit[1]));
+					noWidth = Math.max(noWidth, explicit[1].length);
+				}
+			}
+			if (takenNos.has(no)) {
+				failures.push({
+					row: rowNo,
+					reason: `Employee number ${no} already exists`,
+				});
+				continue;
+			}
+			const normalizedShift = (shift || "normal").toLowerCase();
+			if (!["normal", "flexi"].includes(normalizedShift)) {
+				failures.push({
+					row: rowNo,
+					reason: `Invalid shift "${shift}" (use normal or flexi)`,
+				});
+				continue;
+			}
+			let joined: Date | null = null;
+			if (joinedAt) {
+				if (!/^\d{4}-\d{2}-\d{2}$/.test(joinedAt)) {
+					failures.push({
+						row: rowNo,
+						reason: "JoinedAt must be YYYY-MM-DD",
+					});
+					continue;
+				}
+				joined = new Date(`${joinedAt}T00:00:00Z`);
+			}
+			let rowSiteId: string | null = null;
+			if (siteName) {
+				rowSiteId = siteIdByName.get(siteName.toLowerCase()) ?? null;
+				if (!rowSiteId) {
+					failures.push({
+						row: rowNo,
+						reason: `Work site "${siteName}" not found`,
+					});
+					continue;
+				}
+			}
+			let supervisorId: string | null = null;
+			if (supervisorNo) {
+				// supervisors must already exist in the org — rows created by this
+				// same import cannot be referenced
+				supervisorId = existingNoToId.get(supervisorNo) ?? null;
+				if (!supervisorId) {
+					failures.push({
+						row: rowNo,
+						reason: `Supervisor ${supervisorNo} not found`,
+					});
+					continue;
+				}
+			}
+			if (cap !== null && seatsUsed + 1 > cap) {
+				failures.push({
+					row: rowNo,
+					reason: `Plan limit reached (${cap} active employees)`,
+				});
+				continue;
+			}
+			seatsUsed += 1;
+			takenNos.add(no);
+			valid.push({
+				name,
+				employeeNo: no,
+				position: position || null,
+				shift: normalizedShift,
+				joinedAt: joined,
+				siteId: rowSiteId,
+				supervisorId,
+			});
+		}
+
+		let imported = 0;
+		for (let i = 0; i < valid.length; i += INSERT_CHUNK_ROWS) {
+			const chunk = valid.slice(i, i + INSERT_CHUNK_ROWS);
+			await db.insert(employee).values(
+				chunk.map((row) => ({
+					id: crypto.randomUUID(),
+					organizationId: orgId,
+					...row,
+					isActive: true,
+					createdAt: new Date(),
+				})),
+			);
+			imported += chunk.length;
+		}
+		await logAudit({
+			organizationId: orgId,
+			userId: session.user.id,
+			action: "employees.imported",
+			detail: `${imported} imported, ${failures.length} failed`,
+		});
+		return { ok: true as const, imported, failed: failures };
 	});
 
 export const setEmployeeSchedule = createServerFn({ method: "POST" })
