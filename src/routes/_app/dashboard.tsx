@@ -77,27 +77,24 @@ function DashboardPage() {
 
 	return (
 		<div className="flex flex-col gap-4">
-			<div className="flex flex-col gap-4 rounded-xl border bg-card p-5 sm:flex-row sm:items-center">
-				<Avatar className="size-16 ring-2 ring-border">
+			<div className="flex items-center gap-3 rounded-xl border bg-card p-4">
+				<Avatar className="size-11 ring-2 ring-border">
 					{user?.image ? (
 						<AvatarImage src={user.image} alt={user?.name ?? "User avatar"} />
 					) : null}
-					<AvatarFallback className="text-xl">
+					<AvatarFallback className="text-base">
 						{user?.name?.charAt(0).toUpperCase() ?? "U"}
 					</AvatarFallback>
 				</Avatar>
 				<div className="min-w-0 flex-1">
-					<p className="text-sm text-muted-foreground">Welcome back</p>
 					{isPending ? (
-						<Skeleton className="mt-1 h-8 w-48" />
+						<Skeleton className="h-6 w-48" />
 					) : (
-						<h1 className="truncate text-2xl font-semibold">
-							<span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-								{user?.name ?? "User"}
-							</span>
+						<h1 className="truncate text-lg font-semibold leading-tight">
+							{user?.name ?? "User"}
 						</h1>
 					)}
-					<p className="truncate text-sm text-muted-foreground">
+					<p className="truncate text-xs text-muted-foreground">
 						{user?.email ?? ""}
 					</p>
 				</div>
@@ -162,18 +159,21 @@ function OrgStatsRow({
 			<SummaryCard
 				label="Present today"
 				value={String(stats.presentToday)}
+				detail={`of ${stats.totalEmployees} employees`}
 				icon={UserCheck}
 				to="/attendance"
 			/>
 			<SummaryCard
 				label="On leave today"
 				value={String(stats.onLeaveToday)}
+				detail="approved leave"
 				icon={CalendarOff}
 				to="/leave"
 			/>
 			<SummaryCard
 				label="Late arrivals"
 				value={String(stats.lateToday)}
+				detail="clocked in past grace"
 				icon={AlarmClock}
 				to="/attendance"
 			/>
@@ -183,7 +183,7 @@ function OrgStatsRow({
 				detail={
 					stats.totalEmployees === 0
 						? "Add employees to start tracking"
-						: undefined
+						: "in this organization"
 				}
 				icon={Users}
 				to="/employees"
@@ -754,19 +754,19 @@ function SummaryCard({
 }) {
 	const body = (
 		<Card
-			className={to ? "transition-colors hover:border-primary/40" : undefined}
+			className={to ? "h-full transition-colors hover:border-primary/40" : "h-full"}
 		>
-			<CardHeader className="flex-row items-center justify-between space-y-0">
-				<CardDescription>{label}</CardDescription>
-				<span className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary/15 to-primary/5 text-primary">
-					<Icon className="size-4" />
-				</span>
-			</CardHeader>
-			<CardContent>
-				<CardTitle className="truncate text-3xl">{value}</CardTitle>
-				{detail ? (
-					<p className="mt-1 text-xs text-muted-foreground">{detail}</p>
-				) : null}
+			<CardContent className="flex h-full flex-col gap-2 pt-4">
+				<div className="flex items-center justify-between gap-2">
+					<CardDescription className="text-xs">{label}</CardDescription>
+					<span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/15 to-primary/5 text-primary">
+						<Icon className="size-3.5" />
+					</span>
+				</div>
+				<CardTitle className="text-3xl tabular-nums">{value}</CardTitle>
+				<p className="mt-auto text-xs text-muted-foreground">
+					{detail ?? ""}
+				</p>
 			</CardContent>
 		</Card>
 	);

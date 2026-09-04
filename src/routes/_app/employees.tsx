@@ -839,9 +839,9 @@ function OnboardingCard({
 							{members.map((member) => (
 								<li
 									key={member.userId}
-									className="flex items-center justify-between gap-2 rounded border px-3 py-1.5 text-sm"
+									className="flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-1.5 text-sm"
 								>
-									<span className="min-w-0 truncate">
+									<span className="min-w-0 flex-1 truncate">
 										{member.name}{" "}
 										<span className="text-muted-foreground">
 											{member.email}
@@ -850,6 +850,7 @@ function OnboardingCard({
 									<Button
 										size="sm"
 										variant="outline"
+										className="shrink-0"
 										onClick={() => onAddForMember(member.userId)}
 									>
 										Add employee

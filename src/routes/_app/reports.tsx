@@ -2,7 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
-import { ChevronLeft, ChevronRight, Download } from "lucide-react";
+import {
+	ChevronLeft,
+	ChevronRight,
+	Download,
+	FileSpreadsheet,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -140,6 +145,30 @@ function ReportsPage() {
 			: Object.entries(data?.issuesByEmployee ?? {}).filter(
 					([employeeId]) => employeeId === employeeFilter,
 				);
+	const [issueTypeFilter, setIssueTypeFilter] = useState<string>("all");
+	const [issueStatusFilter, setIssueStatusFilter] = useState<string>("all");
+	const flatIssues = useMemo(() => {
+		const employeeById = new Map(
+			allRows.map((row) => [row.employeeId, row] as const),
+		);
+		return filteredIssues.flatMap(([employeeId, issues]) => {
+			const employee = employeeById.get(employeeId);
+			return issues.map((issue) => ({
+				...issue,
+				employeeName: employee ? employee.name : employeeId,
+				employeeNo: employee?.employeeNo ?? "",
+			}));
+		});
+	}, [filteredIssues, allRows]);
+	const issueTypes = useMemo(
+		() => [...new Set(flatIssues.map((issue) => issue.type))].sort(),
+		[flatIssues],
+	);
+	const visibleIssues = flatIssues.filter(
+		(issue) =>
+			(issueTypeFilter === "all" || issue.type === issueTypeFilter) &&
+			(issueStatusFilter === "all" || issue.status === issueStatusFilter),
+	);
 	const columns = useMemo<ColumnDef<ReportRow>[]>(() => {
 		const base: ColumnDef<ReportRow>[] = [
 			{
@@ -226,6 +255,65 @@ function ReportsPage() {
 		columns,
 		getCoreRowModel: getCoreRowModel(),
 	});
+
+	async function downloadCsv() {
+		if (!data) {
+			return;
+		}
+		const escape = (value: unknown) => {
+			const text = String(value ?? "");
+			return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+		};
+		const header = [
+			"Employee No",
+			"Name",
+			"Work days",
+			"Present",
+			"Late",
+			"Early out",
+			"Missing out",
+			"Absent",
+			"Issues",
+			...data.leaveTypes.flatMap((type) => [
+				`${type.name} (days)`,
+				`${type.name} (balance)`,
+			]),
+		];
+		const lines = [header.map(escape).join(",")];
+		for (const row of rows) {
+			lines.push(
+				[
+					row.employeeNo,
+					row.name,
+					row.workingDays,
+					row.present,
+					row.late,
+					row.earlyOut,
+					row.missingOut,
+					row.absent,
+					row.issueCount,
+					...data.leaveTypes.flatMap((type) => [
+						row.leaveDays[type.id] ?? 0,
+						row.balanceRemaining[type.id] ?? "unlimited",
+					]),
+				]
+					.map(escape)
+					.join(","),
+			);
+		}
+		// UTF-8 BOM so Excel opens the file with correct encoding
+		const blob = new Blob([`\uFEFF${lines.join("\r\n")}`], {
+			type: "text/csv;charset=utf-8",
+		});
+		const url = URL.createObjectURL(blob);
+		const anchor = document.createElement("a");
+		anchor.href = url;
+		anchor.download = `report-${data.year}-${String(data.month).padStart(2, "0")}${
+			selectedEmployee ? `-${selectedEmployee.employeeNo}` : ""
+		}.csv`;
+		anchor.click();
+		URL.revokeObjectURL(url);
+	}
 
 	async function downloadPdf() {
 		if (!data) {
@@ -429,16 +517,21 @@ function ReportsPage() {
 					</Select>
 				) : null}
 				{data && data.scope !== "none" ? (
-					<Button
-						variant="outline"
-						size="sm"
-						className="ml-auto"
-						onClick={downloadPdf}
-						disabled={loading}
-					>
-						<Download />
-						Download PDF
-					</Button>
+					<div className="ml-auto flex gap-2">
+						<Button variant="outline" size="sm" onClick={downloadCsv} disabled={loading}>
+							<FileSpreadsheet />
+							Export CSV
+						</Button>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={downloadPdf}
+							disabled={loading}
+						>
+							<Download />
+							Download PDF
+						</Button>
+					</div>
 				) : null}
 			</div>
 			{data?.scope === "none" ? (
@@ -526,39 +619,85 @@ function ReportsPage() {
 						</CardContent>
 					</Card>
 				) : null}
-					{filteredIssues.length > 0 ? (
+					{flatIssues.length > 0 ? (
 						<Card>
-							<CardHeader>
-								<CardTitle>Attendance issues</CardTitle>
-								<CardDescription>
-									Flagged days and justification outcomes for{" "}
-									{selectedEmployee ? selectedEmployee.name : monthLabel(cursor)}
-								</CardDescription>
+							<CardHeader className="flex-row flex-wrap items-center justify-between gap-3 space-y-0">
+								<div className="space-y-1.5">
+									<CardTitle>Attendance issues</CardTitle>
+									<CardDescription>
+										Flagged days and justification outcomes for{" "}
+										{selectedEmployee ? selectedEmployee.name : monthLabel(cursor)}
+									</CardDescription>
+								</div>
+								<div className="flex flex-wrap gap-2">
+									<Select value={issueTypeFilter} onValueChange={setIssueTypeFilter}>
+										<SelectTrigger className="h-9 w-40">
+											<SelectValue placeholder="All types" />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectGroup>
+												<SelectItem value="all">All types</SelectItem>
+												{issueTypes.map((type) => (
+													<SelectItem key={type} value={type}>
+														{type.replace(/_/g, " ")}
+													</SelectItem>
+												))}
+											</SelectGroup>
+										</SelectContent>
+									</Select>
+									<Select value={issueStatusFilter} onValueChange={setIssueStatusFilter}>
+										<SelectTrigger className="h-9 w-40">
+											<SelectValue placeholder="All statuses" />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectGroup>
+												<SelectItem value="all">All statuses</SelectItem>
+												{["open", "pending", "verified", "rejected"].map((status) => (
+													<SelectItem key={status} value={status}>
+														{status}
+													</SelectItem>
+												))}
+											</SelectGroup>
+										</SelectContent>
+									</Select>
+								</div>
 							</CardHeader>
-							<CardContent className="flex flex-col gap-4">
-								{filteredIssues.map(([employeeId, issues]) => {
-									const employee = allRows.find(
-										(row) => row.employeeId === employeeId,
-									);
-									return (
-										<div key={employeeId} className="flex flex-col gap-1">
-											<p className="text-sm font-medium">
-												{employee
-													? `${employee.name} (${employee.employeeNo})`
-													: employeeId}
-											</p>
-											<ul className="flex flex-col gap-1 text-sm">
-												{issues.map((issue, index) => (
-													<li
-														key={`${issue.date}-${issue.type}-${index}`}
-														className="flex flex-wrap items-center gap-2"
-													>
-														<span className="tabular-nums text-muted-foreground">
-															{issue.date}
+							<CardContent className="overflow-x-auto">
+								{visibleIssues.length === 0 ? (
+									<p className="text-sm text-muted-foreground">
+										No issues match the selected filters.
+									</p>
+								) : (
+									<table className="w-full min-w-160 text-sm">
+										<thead>
+											<tr className="border-b text-left text-xs text-muted-foreground">
+												<th className="py-1.5 pr-3">Employee</th>
+												<th className="py-1.5 pr-3">Date</th>
+												<th className="py-1.5 pr-3">Type</th>
+												<th className="py-1.5 pr-3">Status</th>
+												<th className="py-1.5 pr-3">Justification</th>
+												<th className="py-1.5">Reviewer note</th>
+											</tr>
+										</thead>
+										<tbody>
+											{visibleIssues.map((issue, index) => (
+												<tr
+													key={`${issue.employeeNo}-${issue.date}-${issue.type}-${index}`}
+													className="border-b last:border-0"
+												>
+													<td className="py-1.5 pr-3">
+														{issue.employeeName}
+														<span className="ml-2 text-xs text-muted-foreground">
+															{issue.employeeNo}
 														</span>
+													</td>
+													<td className="py-1.5 pr-3 tabular-nums">{issue.date}</td>
+													<td className="py-1.5 pr-3">
 														<Badge variant="secondary">
 															{issue.type.replace(/_/g, " ")}
 														</Badge>
+													</td>
+													<td className="py-1.5 pr-3">
 														<Badge
 															variant={
 																issue.status === "verified"
@@ -572,22 +711,18 @@ function ReportsPage() {
 														>
 															{issue.status}
 														</Badge>
-														{issue.justification ? (
-															<span className="min-w-0 flex-1 truncate text-muted-foreground">
-																“{issue.justification}”
-															</span>
-														) : null}
-														{issue.reviewNote ? (
-															<span className="min-w-0 flex-1 truncate text-xs text-destructive">
-																Reviewer: {issue.reviewNote}
-															</span>
-														) : null}
-													</li>
-												))}
-											</ul>
-										</div>
-									);
-								})}
+													</td>
+													<td className="max-w-72 truncate py-1.5 pr-3 text-muted-foreground">
+														{issue.justification ? `“${issue.justification}”` : "—"}
+													</td>
+													<td className="max-w-60 truncate py-1.5 text-xs text-destructive">
+														{issue.reviewNote ?? ""}
+													</td>
+												</tr>
+											))}
+										</tbody>
+									</table>
+								)}
 							</CardContent>
 						</Card>
 					) : null}

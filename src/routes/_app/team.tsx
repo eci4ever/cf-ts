@@ -255,14 +255,16 @@ function TeamPage() {
 										<TableCell className="font-medium">{member.name}</TableCell>
 										<TableCell>{member.email}</TableCell>
 										<TableCell>
-											<RoleBadge role={member.role} />
-											{member.role === "supervisor" ? (
-													<span className="mt-1 block text-xs text-muted-foreground">
+											<div className="flex flex-wrap items-center gap-2">
+												<RoleBadge role={member.role} />
+												{member.role === "supervisor" ? (
+													<span className="text-xs text-muted-foreground">
 														{member.subordinateCount} subordinate
 														{member.subordinateCount === 1 ? "" : "s"}
 													</span>
 												) : null}
-											</TableCell>
+											</div>
+										</TableCell>
 										<TableCell>
 											{new Date(member.joinedAt).toLocaleDateString()}
 										</TableCell>

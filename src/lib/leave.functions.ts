@@ -1,7 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { getDb } from "#/db";
-import { employee, leaveRequest, leaveType, organization } from "#/db/schema";
+import {
+	employee,
+	leaveRequest,
+	leaveType,
+	orgHoliday,
+	organization,
+} from "#/db/schema";
 import { countWorkingDays, isValidDateKey, rangesOverlap } from "./leave";
 import { getHolidayDates } from "./holidays";
 import { notifyEmployee, notifySupervisors } from "./notify";
@@ -727,3 +733,50 @@ export const decideLeave = createServerFn({ method: "POST" })
 		});
 		return { ok: true as const };
 	});
+
+export const getOrgLeaveWidgets = createServerFn({ method: "GET" }).handler(
+	async () => {
+		const context = await requireMember();
+		const today = todayKey(context.org.timezone);
+		const upcomingHolidays = await getDb()
+			.select({ date: orgHoliday.date, name: orgHoliday.name })
+			.from(orgHoliday)
+			.where(
+				and(
+					eq(orgHoliday.organizationId, context.orgId),
+					gte(orgHoliday.date, today),
+				),
+			)
+			.orderBy(asc(orgHoliday.date))
+			.limit(3);
+		// Monday-based week containing today
+		const [year, month, day] = today.split("-").map(Number);
+		const weekday = (new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7;
+		const weekStart = new Date(Date.UTC(year, month - 1, day - weekday))
+			.toISOString()
+			.slice(0, 10);
+		const weekEnd = new Date(Date.UTC(year, month - 1, day - weekday + 6))
+			.toISOString()
+			.slice(0, 10);
+		const onLeaveThisWeek = await getDb()
+			.select({
+				employeeName: employee.name,
+				leaveTypeName: leaveType.name,
+				startDate: leaveRequest.startDate,
+				endDate: leaveRequest.endDate,
+			})
+			.from(leaveRequest)
+			.innerJoin(employee, eq(employee.id, leaveRequest.employeeId))
+			.innerJoin(leaveType, eq(leaveType.id, leaveRequest.leaveTypeId))
+			.where(
+				and(
+					eq(leaveRequest.organizationId, context.orgId),
+					eq(leaveRequest.status, "approved"),
+					lte(leaveRequest.startDate, weekEnd),
+					gte(leaveRequest.endDate, weekStart),
+				),
+			)
+			.orderBy(asc(leaveRequest.startDate));
+		return { today, weekStart, weekEnd, upcomingHolidays, onLeaveThisWeek };
+	},
+);

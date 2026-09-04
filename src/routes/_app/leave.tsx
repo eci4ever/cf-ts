@@ -1,6 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { CalendarPlus, Check, X } from "lucide-react";
+import {
+	CalendarPlus,
+	CalendarRange,
+	Check,
+	PartyPopper,
+	X,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -56,6 +62,7 @@ import {
 	cancelLeave,
 	decideLeave,
 	getLeaveOverview,
+	getOrgLeaveWidgets,
 	listApprovals,
 } from "#/lib/leave.functions";
 
@@ -118,6 +125,10 @@ function MyLeaveTab() {
 		queryKey: ["leave", "overview"],
 		queryFn: getLeaveOverview,
 	});
+	const widgetsQuery = useQuery({
+		queryKey: ["leave", "widgets"],
+		queryFn: getOrgLeaveWidgets,
+	});
 
 	if (overviewQuery.isError) {
 		return (
@@ -160,6 +171,8 @@ function MyLeaveTab() {
 					</Card>
 				))}
 			</div>
+
+			<LeaveWidgetsCard widgetsQuery={widgetsQuery} />
 
 			<Card>
 				<CardHeader>
@@ -238,6 +251,92 @@ function MyLeaveTab() {
 					toast.success("Leave request submitted");
 				}}
 			/>
+		</div>
+	);
+}
+
+function LeaveWidgetsCard({
+	widgetsQuery,
+}: {
+	widgetsQuery: ReturnType<
+		typeof useQuery<Awaited<ReturnType<typeof getOrgLeaveWidgets>>>
+	>;
+}) {
+	if (widgetsQuery.isPending || widgetsQuery.isError || !widgetsQuery.data) {
+		return null;
+	}
+	const { weekStart, weekEnd, upcomingHolidays, onLeaveThisWeek } =
+		widgetsQuery.data;
+	return (
+		<div className="grid gap-4 lg:grid-cols-2">
+			<Card>
+				<CardHeader className="flex-row items-center justify-between space-y-0">
+					<div className="space-y-1.5">
+						<CardTitle>Next public holidays</CardTitle>
+						<CardDescription>From your organization calendar</CardDescription>
+					</div>
+					<PartyPopper className="size-4 text-muted-foreground" />
+				</CardHeader>
+				<CardContent>
+					{upcomingHolidays.length === 0 ? (
+						<p className="text-sm text-muted-foreground">
+							No upcoming holidays configured — add them in Settings.
+						</p>
+					) : (
+						<ul className="flex flex-col gap-1.5">
+							{upcomingHolidays.map((holiday) => (
+								<li
+									key={holiday.date}
+									className="flex items-center justify-between gap-2 text-sm"
+								>
+									<span className="truncate">{holiday.name}</span>
+									<span className="shrink-0 tabular-nums text-muted-foreground">
+										{holiday.date}
+									</span>
+								</li>
+							))}
+						</ul>
+					)}
+				</CardContent>
+			</Card>
+			<Card>
+				<CardHeader className="flex-row items-center justify-between space-y-0">
+					<div className="space-y-1.5">
+						<CardTitle>On leave this week</CardTitle>
+						<CardDescription>
+							{weekStart} → {weekEnd}
+						</CardDescription>
+					</div>
+					<CalendarRange className="size-4 text-muted-foreground" />
+				</CardHeader>
+				<CardContent>
+					{onLeaveThisWeek.length === 0 ? (
+						<p className="text-sm text-muted-foreground">
+							Nobody is on approved leave this week.
+						</p>
+					) : (
+						<ul className="flex flex-col gap-1.5">
+							{onLeaveThisWeek.map((row) => (
+								<li
+									key={`${row.employeeName}:${row.startDate}`}
+									className="flex items-center justify-between gap-2 text-sm"
+								>
+									<span className="truncate">
+										{row.employeeName}
+										<span className="text-muted-foreground">
+											{" "}
+											· {row.leaveTypeName}
+										</span>
+									</span>
+									<span className="shrink-0 tabular-nums text-muted-foreground">
+										{row.startDate} → {row.endDate}
+									</span>
+								</li>
+							))}
+						</ul>
+					)}
+				</CardContent>
+			</Card>
 		</div>
 	);
 }
