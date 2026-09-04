@@ -9,13 +9,18 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
-	"main": "@tanstack/react-start/server-entry",
+	"main": "src/server.ts",
 	"routes": [
 		{
 			"pattern": "tapme.nimfi.dev",
 			"custom_domain": true
 		}
 	],
+	"triggers": {
+		"crons": [
+			"*/15 * * * *"
+		]
+	},
 	"observability": {
 		"enabled": true
 	},
