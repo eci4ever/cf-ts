@@ -30,6 +30,7 @@ import { Route as AppAccountActivityRouteImport } from './routes/_app/account_.a
 import { Route as AppAdminIndexRouteImport } from './routes/_app/admin.index'
 import { Route as AppAdminAuditRouteImport } from './routes/_app/admin/audit'
 import { Route as AppAdminOrganizationsRouteImport } from './routes/_app/admin.organizations'
+import { Route as AppAdminSettingsRouteImport } from './routes/_app/admin.settings'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin.users'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AppAdminOrganizationsOrgIdRouteImport } from './routes/_app/admin.organizations_.$orgId'
@@ -138,6 +139,11 @@ const AppAdminOrganizationsRoute = AppAdminOrganizationsRouteImport.update({
   path: '/organizations',
   getParentRoute: () => AppAdminRoute,
 } as any)
+const AppAdminSettingsRoute = AppAdminSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppAdminRoute,
+} as any)
 const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -175,6 +181,7 @@ export interface FileRoutesByFullPath {
   '/account/activity': typeof AppAccountActivityRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organizations': typeof AppAdminOrganizationsRoute
+  '/admin/settings': typeof AppAdminSettingsRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/admin/': typeof AppAdminIndexRoute
@@ -199,6 +206,7 @@ export interface FileRoutesByTo {
   '/account/activity': typeof AppAccountActivityRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/organizations': typeof AppAdminOrganizationsRoute
+  '/admin/settings': typeof AppAdminSettingsRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/admin': typeof AppAdminIndexRoute
@@ -226,6 +234,7 @@ export interface FileRoutesById {
   '/_app/account_/activity': typeof AppAccountActivityRoute
   '/_app/admin/audit': typeof AppAdminAuditRoute
   '/_app/admin/organizations': typeof AppAdminOrganizationsRoute
+  '/_app/admin/settings': typeof AppAdminSettingsRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/_app/admin/': typeof AppAdminIndexRoute
@@ -253,6 +262,7 @@ export interface FileRouteTypes {
     | '/account/activity'
     | '/admin/audit'
     | '/admin/organizations'
+    | '/admin/settings'
     | '/admin/users'
     | '/api/auth/$'
     | '/admin/'
@@ -277,6 +287,7 @@ export interface FileRouteTypes {
     | '/account/activity'
     | '/admin/audit'
     | '/admin/organizations'
+    | '/admin/settings'
     | '/admin/users'
     | '/api/auth/$'
     | '/admin'
@@ -303,6 +314,7 @@ export interface FileRouteTypes {
     | '/_app/account_/activity'
     | '/_app/admin/audit'
     | '/_app/admin/organizations'
+    | '/_app/admin/settings'
     | '/_app/admin/users'
     | '/api/auth/$'
     | '/_app/admin/'
@@ -469,6 +481,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminOrganizationsRouteImport
       parentRoute: typeof AppAdminRoute
     }
+    '/_app/admin/settings': {
+      id: '/_app/admin/settings'
+      path: '/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AppAdminSettingsRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
     '/_app/admin/users': {
       id: '/_app/admin/users'
       path: '/users'
@@ -496,6 +515,7 @@ declare module '@tanstack/react-router' {
 interface AppAdminRouteChildren {
   AppAdminAuditRoute: typeof AppAdminAuditRoute
   AppAdminOrganizationsRoute: typeof AppAdminOrganizationsRoute
+  AppAdminSettingsRoute: typeof AppAdminSettingsRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
   AppAdminIndexRoute: typeof AppAdminIndexRoute
   AppAdminOrganizationsOrgIdRoute: typeof AppAdminOrganizationsOrgIdRoute
@@ -504,6 +524,7 @@ interface AppAdminRouteChildren {
 const AppAdminRouteChildren: AppAdminRouteChildren = {
   AppAdminAuditRoute: AppAdminAuditRoute,
   AppAdminOrganizationsRoute: AppAdminOrganizationsRoute,
+  AppAdminSettingsRoute: AppAdminSettingsRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
   AppAdminIndexRoute: AppAdminIndexRoute,
   AppAdminOrganizationsOrgIdRoute: AppAdminOrganizationsOrgIdRoute,

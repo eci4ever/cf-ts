@@ -5,6 +5,7 @@ import {
 	creditLedger,
 	member,
 	organization,
+	platformSettings,
 	topupRequest,
 	user,
 } from "#/db/schema";
@@ -646,6 +647,121 @@ export const decideTopupRequest = createServerFn({ method: "POST" })
 			targetUserId: request.requestedBy,
 			action: data.decision === "approved" ? "billing.topup_approved" : "billing.topup_rejected",
 			detail: `${formatRm(request.amountSen)} (ref: ${request.paymentRef})${note ? ` — ${note}` : ""}`,
+		});
+		return { ok: true as const };
+	});
+
+const PAYMENT_SETTINGS_ID = "platform";
+const QR_MAX_CHARS = 400_000; // ~300KB binary as a data URL
+
+async function readPaymentSettings() {
+	const [row] = await getDb()
+		.select({
+			bankName: platformSettings.bankName,
+			bankAccount: platformSettings.bankAccount,
+			accountHolder: platformSettings.accountHolder,
+			contactEmail: platformSettings.contactEmail,
+			qrBase64: platformSettings.qrBase64,
+		})
+		.from(platformSettings)
+		.where(eq(platformSettings.id, PAYMENT_SETTINGS_ID))
+		.limit(1);
+	return row ?? null;
+}
+
+async function requirePlatformAdmin() {
+	const session = await getCurrentSession();
+	if (!session) {
+		throw new Error("Unauthorized");
+	}
+	if (!session.user.role?.split(",").includes("admin")) {
+		throw new Error("Forbidden");
+	}
+	return session;
+}
+
+// shown to org admins/owners in the Billing top-up dialog
+export const getPaymentInstructions = createServerFn({ method: "GET" }).handler(
+	async () => {
+		await requireOrgBillingAccess();
+		return readPaymentSettings();
+	},
+);
+
+export const getPlatformPaymentSettings = createServerFn({
+	method: "GET",
+}).handler(async () => {
+	await requirePlatformAdmin();
+	return readPaymentSettings();
+});
+
+export const savePlatformPaymentSettings = createServerFn({ method: "POST" })
+	.validator(
+		(input: {
+			bankName: string;
+			bankAccount: string;
+			accountHolder: string;
+			contactEmail: string;
+			// null clears the stored QR image
+			qrBase64: string | null;
+		}) => input,
+	)
+	.handler(async ({ data }) => {
+		const session = await requirePlatformAdmin();
+		const bankName = data.bankName.trim().slice(0, 80);
+		const bankAccount = data.bankAccount.trim().slice(0, 60);
+		const accountHolder = data.accountHolder.trim().slice(0, 80);
+		const contactEmail = data.contactEmail.trim();
+		if (bankName.length < 2) {
+			return { ok: false as const, reason: "Bank name is required" };
+		}
+		if (bankAccount.length < 4) {
+			return { ok: false as const, reason: "Account number is required" };
+		}
+		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
+			return { ok: false as const, reason: "Invalid contact email" };
+		}
+		let qrBase64: string | null = null;
+		if (data.qrBase64 !== null) {
+			const trimmed = data.qrBase64.trim();
+			if (!/^data:image\/(png|jpe?g|webp);base64,/.test(trimmed)) {
+				return {
+					ok: false as const,
+					reason: "QR must be a PNG, JPG or WebP image",
+				};
+			}
+			if (trimmed.length > QR_MAX_CHARS) {
+				return { ok: false as const, reason: "QR image too large (max ~300KB)" };
+			}
+			qrBase64 = trimmed;
+		}
+		await getDb()
+			.insert(platformSettings)
+			.values({
+				id: PAYMENT_SETTINGS_ID,
+				bankName,
+				bankAccount,
+				accountHolder,
+				contactEmail,
+				qrBase64,
+				updatedAt: new Date(),
+			})
+			.onConflictDoUpdate({
+				target: platformSettings.id,
+				set: {
+					bankName,
+					bankAccount,
+					accountHolder,
+					contactEmail,
+					qrBase64,
+					updatedAt: new Date(),
+				},
+			});
+		await logAudit({
+			organizationId: null,
+			userId: session.user.id,
+			action: "platform.payment_settings_saved",
+			detail: `${bankName} · ${contactEmail}`,
 		});
 		return { ok: true as const };
 	});

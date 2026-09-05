@@ -403,3 +403,14 @@ export const invitation = sqliteTable("invitation", {
 	createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 	expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
 });
+
+export const platformSettings = sqliteTable("platform_settings", {
+	// single row — id is always "platform"
+	id: text("id").primaryKey(),
+	bankName: text("bank_name"),
+	bankAccount: text("bank_account"),
+	accountHolder: text("account_holder"),
+	contactEmail: text("contact_email"),
+	qrBase64: text("qr_base64"),
+	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});

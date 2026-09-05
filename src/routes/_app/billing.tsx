@@ -40,6 +40,7 @@ import {
 } from "#/components/ui/table";
 import {
 	getBillingOverview,
+	getPaymentInstructions,
 	listMyTopupRequests,
 	type SubscriptionState,
 	subscribePlan,
@@ -160,27 +161,7 @@ function BillingPage() {
 				</CardContent>
 			</Card>
 
-			<Card>
-				<CardHeader className="flex-row items-start justify-between gap-2">
-					<div>
-						<CardTitle>Payment instructions</CardTitle>
-						<CardDescription>
-							Transfer to the account provided by the administrator, then submit
-							a top-up request with your payment reference
-						</CardDescription>
-					</div>
-					<RequestTopupButton />
-				</CardHeader>
-				<CardContent className="text-sm text-muted-foreground">
-					<p>
-						Make a bank transfer, then click <strong>Request top-up</strong> and
-						enter the amount plus your transfer reference number. The platform
-						administrator will verify and approve it — your balance updates
-						automatically once approved.
-					</p>
-				</CardContent>
-			</Card>
-
+			<PaymentInstructionsCard />
 			<TopupRequestsCard />
 
 			<Card>
@@ -390,6 +371,11 @@ function RequestTopupButton() {
 	const [open, setOpen] = useState(false);
 	const [amount, setAmount] = useState("");
 	const [paymentRef, setPaymentRef] = useState("");
+	const instructionsQuery = useQuery({
+		queryKey: ["billing", "payment-instructions"],
+		queryFn: getPaymentInstructions,
+		enabled: open,
+	});
 	const requestMutation = useMutation({
 		mutationFn: async (input: { amountSen: number; paymentRef: string }) => {
 			const result = await requestTopup({ data: input });
@@ -418,6 +404,8 @@ function RequestTopupButton() {
 		requestMutation.mutate({ amountSen, paymentRef });
 	}
 
+	const instructions = instructionsQuery.data ?? null;
+
 	return (
 		<>
 			<Button size="sm" onClick={() => setOpen(true)}>
@@ -425,14 +413,57 @@ function RequestTopupButton() {
 				Request top-up
 			</Button>
 			<Dialog open={open} onOpenChange={setOpen}>
-				<DialogContent>
+				<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
 					<DialogHeader>
 						<DialogTitle>Request credit top-up</DialogTitle>
 						<DialogDescription>
-							Enter the amount you transferred and the payment reference
-							number. The platform administrator will verify and approve it.
+							Transfer the amount by manual bank transfer, then submit this
+							request with your payment reference. The platform administrator
+							will verify it against the bank statement and approve.
 						</DialogDescription>
 					</DialogHeader>
+					{instructions ? (
+						<div className="flex flex-col gap-3 rounded-md border bg-muted/40 p-3">
+							<p className="text-sm font-medium">Payment instructions</p>
+							<div className="grid gap-1 text-sm">
+								{instructions.bankName ? (
+									<p>
+										<span className="text-muted-foreground">Bank: </span>
+										{instructions.bankName}
+									</p>
+								) : null}
+								{instructions.bankAccount ? (
+									<p>
+										<span className="text-muted-foreground">Account no: </span>
+										<span className="font-mono">{instructions.bankAccount}</span>
+									</p>
+								) : null}
+								{instructions.accountHolder ? (
+									<p>
+										<span className="text-muted-foreground">Holder: </span>
+										{instructions.accountHolder}
+									</p>
+								) : null}
+							</div>
+							{instructions.qrBase64 ? (
+								<img
+									src={instructions.qrBase64}
+									alt="DuitNow QR"
+									className="h-40 w-40 self-center rounded border bg-white object-contain p-1"
+								/>
+							) : null}
+							{instructions.contactEmail ? (
+								<p className="text-xs text-muted-foreground">
+									After transferring, email your payment proof to{" "}
+									<span className="font-medium text-foreground">
+										{instructions.contactEmail}
+									</span>{" "}
+									— include your organization name and the payment reference you
+									enter below.
+								</p>
+							) : null}
+						</div>
+					) : null}
 					<form onSubmit={handleSubmit} className="flex flex-col gap-4">
 						<div className="flex flex-col gap-2">
 							<Label htmlFor="topup-amount">Amount (RM)</Label>
@@ -451,7 +482,7 @@ function RequestTopupButton() {
 								id="topup-ref"
 								value={paymentRef}
 								onChange={(event) => setPaymentRef(event.target.value)}
-								placeholder="e.g. FT1234567890"
+								placeholder="e.g. FT1234567890 or your company name"
 								required
 								minLength={3}
 								maxLength={60}
@@ -466,6 +497,78 @@ function RequestTopupButton() {
 				</DialogContent>
 			</Dialog>
 		</>
+	);
+}
+
+function PaymentInstructionsCard() {
+	const instructionsQuery = useQuery({
+		queryKey: ["billing", "payment-instructions"],
+		queryFn: getPaymentInstructions,
+	});
+	const instructions = instructionsQuery.data ?? null;
+	return (
+		<Card>
+			<CardHeader className="flex-row items-start justify-between gap-2">
+				<div className="space-y-1.5">
+					<CardTitle>Payment instructions</CardTitle>
+					<CardDescription>
+						Transfer by manual bank transfer, then submit a top-up request with
+						your payment reference
+					</CardDescription>
+				</div>
+				<RequestTopupButton />
+			</CardHeader>
+			<CardContent className="text-sm">
+				{instructions &&
+				(instructions.bankAccount || instructions.bankName) ? (
+					<div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+						<div className="grid gap-1">
+							{instructions.bankName ? (
+								<p>
+									<span className="text-muted-foreground">Bank: </span>
+									{instructions.bankName}
+								</p>
+							) : null}
+							{instructions.bankAccount ? (
+								<p>
+									<span className="text-muted-foreground">Account no: </span>
+									<span className="font-mono">{instructions.bankAccount}</span>
+								</p>
+							) : null}
+							{instructions.accountHolder ? (
+								<p>
+									<span className="text-muted-foreground">Holder: </span>
+									{instructions.accountHolder}
+								</p>
+							) : null}
+						</div>
+						{instructions.qrBase64 ? (
+							<img
+								src={instructions.qrBase64}
+								alt="DuitNow QR"
+								className="size-28 rounded border bg-white object-contain p-1"
+							/>
+						) : null}
+					</div>
+				) : (
+					<p className="text-muted-foreground">
+						Bank account details will appear here once the platform
+						administrator configures them.
+					</p>
+				)}
+				{instructions?.contactEmail ? (
+					<p className="mt-3 text-xs text-muted-foreground">
+						Email your payment proof to{" "}
+						<span className="font-medium text-foreground">
+							{instructions.contactEmail}
+						</span>{" "}
+						with your organization name and payment reference. The platform
+						administrator will verify and approve — your balance updates
+						automatically once approved.
+					</p>
+				) : null}
+			</CardContent>
+		</Card>
 	);
 }
 
